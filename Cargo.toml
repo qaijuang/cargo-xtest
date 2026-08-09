@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    # Keep members in order of cargo-xtest(execution) dependency graph, top to bottom.
+    # Avoid cyclic-dependency linking and any dependency structure that hurts
+    # our ^^ order of execution and spikes compile time.
+]
+package = { edition = "2024" }
+lints.clippy = { all = "deny", cargo = "deny", pedantic = "warn" }
+
+[package]
+name = "cargo-xtest"
+edition.workspace = true
