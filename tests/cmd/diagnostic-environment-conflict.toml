@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/environment-conflict.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: environment key `DATABASE_URL` is both set and unset
+ --> tests/cmd/fixtures/environment-conflict.rs:2:5
+  |
+2 | //@ unset-exec-env: DATABASE_URL
+  |     ^^^^^^^^^^^^^^ conflicting environment change
+  |
+  = note: first environment change declared at tests/cmd/fixtures/environment-conflict.rs:1:5
+"""

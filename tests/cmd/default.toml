@@ -1,0 +1,7 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+status.code = 0
+stdout = """
+skipped [CWD]/tests/ignored.rs: ignored by `ignore-test`: (trycmd fixture)
+"""
+stderr = ""

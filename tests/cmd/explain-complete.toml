@@ -1,0 +1,42 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/complete.rs"]
+status.code = 0
+stdout = """
+test: tests/cmd/fixtures/complete.rs
+
+applicability:
+  ignore-test: (temporarily blocked) [line 1]
+  only: linux [line 2]
+  ignore: aarch64 [line 3]
+
+execution:
+  profile: self-contained-linux-musl [default]
+  run-flags: --exact | named case [line 10]
+  environment:
+    - set RUST_BACKTRACE=1 [line 11]
+    - unset RUST_LOG [line 12]
+
+sandbox:
+  rootfs: image ghcr.io/example/test@sha256:abcd [line 13]
+  pull-policy: never [line 14]
+  root-disk-mib: 8192 [line 17]
+  cpus: 2 [line 15]
+  memory-mib: 1024 [line 16]
+  max-duration-secs: 900 [line 18]
+  lifecycle: ephemeral [default]
+  network: disabled [line 23]
+  failure-retention: preserve [line 24]
+  user: tester [line 19]
+  workdir: /workspace [line 20]
+  shell: /bin/bash [line 21]
+  init: auto [line 22]
+
+requires:
+  - threads [line 4]
+  - subprocess [line 5]
+  - symlink [line 6]
+  - dynamic-linking [line 7]
+  - target-std [line 8]
+  - unwind [line 9]
+"""
+stderr = ""

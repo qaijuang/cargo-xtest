@@ -1,0 +1,11 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/invalid-value.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT003]: `memory` must be greater than zero
+ --> tests/cmd/fixtures/invalid-value.rs:1:5
+  |
+1 | //@ memory: 0
+  |     ^^^^^^ directive declared here
+"""

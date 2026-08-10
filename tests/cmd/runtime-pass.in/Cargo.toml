@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-pass-case"
+edition = "2024"
+
+[[test]]
+name = "runtime"
+path = "tests/runtime.rs"

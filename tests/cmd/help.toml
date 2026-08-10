@@ -1,0 +1,16 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "--help"]
+status.code = 0
+stdout = """
+Run Rust integration tests in Microsandbox
+
+Usage: cargo xtest [COMMAND]
+
+Commands:
+  explain  Show the effective test specification
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+"""
+stderr = ""

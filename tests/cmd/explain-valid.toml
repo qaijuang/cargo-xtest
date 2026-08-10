@@ -1,0 +1,35 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/fixtures/valid.rs"]
+status.code = 0
+stdout = """
+test: tests/fixtures/valid.rs
+
+applicability:
+  ignore-test: no
+  only: none
+  ignore: none
+
+execution:
+  profile: self-contained-linux-musl [default]
+  run-flags: none
+  environment: unchanged
+
+sandbox:
+  rootfs: built-in-runtime [default]
+  pull-policy: if-missing [default]
+  root-disk-mib: 4096 [default]
+  cpus: 1 [default]
+  memory-mib: 768 [line 2]
+  max-duration-secs: 600 [default]
+  lifecycle: ephemeral [default]
+  network: disabled [default]
+  failure-retention: destroy [default]
+  user: image-default [default]
+  workdir: image-default [default]
+  shell: /bin/sh [default]
+  init: none [default]
+
+requires:
+  - threads [line 1]
+"""
+stderr = ""

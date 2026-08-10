@@ -1,0 +1,1 @@
+//@[fast] memory: 256

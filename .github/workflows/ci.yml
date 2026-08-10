@@ -20,10 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+        include:
+          - os: ubuntu-latest
+            guest_target: x86_64-unknown-linux-musl
+          - os: windows-latest
+            guest_target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            guest_target: aarch64-unknown-linux-musl
     steps:
       # The Windows runners have autocrlf enabled by default.
       - name: Disable git autocrlf
@@ -46,18 +49,59 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Rust
-        run: rustup toolchain install nightly --no-self-update --profile minimal --component rust-src,rustfmt,clippy,miri
+        run: rustup toolchain install nightly --no-self-update --profile minimal --component rust-src,rustfmt,clippy,miri --target ${{ matrix.guest_target }}
 
       - name: Check formatting
         run: cargo fmt --all --check
 
       - name: Run tests
-        run: cargo test --workspace --all-features --all-targets
+        run: cargo test --all-features --all-targets
 
       - name: Run tests (miri)
-        run: cargo miri test --workspace --all-features --all-targets
+        run: cargo miri test --all-features --all-targets
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-backtrace=full
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings -D clippy::all -W clippy::pedantic -D clippy::cargo
+        run: cargo clippy --all-features --all-targets -- -D warnings -D clippy::all -W clippy::pedantic -D clippy::cargo
+
+  runtime:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_XTEST_VM_TESTS: 1
+      MSB_HOME: ${{ runner.temp }}/microsandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}-runtime
+
+      - name: Install Rust
+        run: rustup toolchain install nightly --no-self-update --profile minimal --target x86_64-unknown-linux-musl
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Prepare Microsandbox runtime
+        run: cargo test --test cli --all-features --no-run
+
+      - name: Verify Microsandbox runtime
+        run: |
+          test "$("${MSB_HOME}/bin/msb" --version)" = 'msb 0.6.8'
+          test -f "${MSB_HOME}/lib/libkrunfw.so.5"
+
+      - name: Run Microsandbox UI tests
+        run: cargo test --test cli --all-features -- cli trycmd=runtime-

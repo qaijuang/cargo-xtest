@@ -1,0 +1,30 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+fs.sandbox = true
+status.code = 101
+stdout = """
+running [CWD]/tests/runtime_failure.rs
+
+running 1 test
+test reports_a_controlled_failure ... FAILED
+
+successes:
+
+successes:
+
+failures:
+
+---- reports_a_controlled_failure stdout ----
+failure output from inside Microsandbox
+Error: "controlled Microsandbox failure"
+
+
+failures:
+    reports_a_controlled_failure
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in [..]
+
+"""
+stderr = """
+test [CWD]/tests/runtime_failure.rs failed with status 101
+"""

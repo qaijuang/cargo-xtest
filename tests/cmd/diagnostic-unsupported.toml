@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/unsupported.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT006]: revision-qualified directives are not supported
+ --> tests/cmd/fixtures/unsupported.rs:1:4
+  |
+1 | //@[fast] memory: 256
+  |    ^^^^^^ directive declared here
+  |
+  = help: use separate Cargo test targets or library-level cases
+"""

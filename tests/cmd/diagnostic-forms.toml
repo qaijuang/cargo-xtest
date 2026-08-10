@@ -1,0 +1,37 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/form-errors.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT002]: `memory` requires a colon and value
+ --> tests/cmd/fixtures/form-errors.rs:1:5
+  |
+1 | //@ memory
+  |     ^^^^^^ directive declared here
+  |
+  = help: write `//@ memory: value`
+
+error[XT002]: `needs-threads` is a presence directive
+ --> tests/cmd/fixtures/form-errors.rs:2:5
+  |
+2 | //@ needs-threads: yes
+  |     ^^^^^^^^^^^^^ directive declared here
+  |
+  = help: write `//@ needs-threads` without a colon
+
+error[XT002]: a directive must be the only directive on its line
+ --> tests/cmd/fixtures/form-errors.rs:3:5
+  |
+3 | //@ only-linux only-x86_64
+  |     ^^^^^^^^^^ directive declared here
+  |
+  = help: put each `//@` directive on its own line
+
+error[XT003]: `ignore-test` requires an explanatory remark
+ --> tests/cmd/fixtures/form-errors.rs:4:5
+  |
+4 | //@ ignore-test
+  |     ^^^^^^^^^^^ directive declared here
+  |
+  = help: write `//@ ignore-test (reason)`
+"""

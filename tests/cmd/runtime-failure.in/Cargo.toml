@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-failure-case"
+edition = "2024"
+
+[[test]]
+name = "runtime_failure"
+path = "tests/runtime_failure.rs"

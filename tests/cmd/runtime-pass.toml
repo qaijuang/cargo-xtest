@@ -1,0 +1,28 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+fs.sandbox = true
+status.code = 0
+stdout = """
+running [CWD]/tests/runtime.rs
+
+running 2 tests
+test environment_is_configured_inside_the_vm ... ok
+test multiple_tests_share_the_libtest_binary ... ok
+
+successes:
+
+---- environment_is_configured_inside_the_vm stdout ----
+environment configured inside Microsandbox
+
+---- multiple_tests_share_the_libtest_binary stdout ----
+second test in the same libtest binary
+
+
+successes:
+    environment_is_configured_inside_the_vm
+    multiple_tests_share_the_libtest_binary
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in [..]
+
+"""
+stderr = ""

@@ -1,0 +1,12 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain"]
+status.code = 2
+stdout = ""
+stderr = """
+error: the following required arguments were not provided:
+  <TEST_FILE>
+
+Usage: cargo xtest explain <TEST_FILE>
+
+For more information, try '--help'.
+"""

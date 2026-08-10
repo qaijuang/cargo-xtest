@@ -1,12 +1,19 @@
-[workspace]
-members = [
-    # Keep members in order of cargo-xtest(execution) dependency graph, top to bottom.
-    # Avoid cyclic-dependency linking and any dependency structure that hurts
-    # our ^^ order of execution and spikes compile time.
-]
-package = { edition = "2024" }
-lints.clippy = { all = "deny", cargo = "deny", pedantic = "warn" }
-
 [package]
 name = "cargo-xtest"
-edition.workspace = true
+description = "Run Rust integration tests in Microsandbox"
+edition = "2024"
+
+[dependencies]
+anyhow = "=1.0.104"
+cargo_metadata = "=0.23.1"
+clap = { version = "=4.6.4", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
+microsandbox = { version = "=0.6.8", default-features = false, features = ["net", "prebuilt"] }
+tokio = { version = "=1.52.3", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+trycmd = { version = "=1.2.1", default-features = false, features = ["diff", "filesystem"] }
+
+[lints.clippy]
+all = "deny"
+cargo = "deny"
+pedantic = "deny"

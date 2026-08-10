@@ -1,0 +1,35 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/snapshot.rs"]
+status.code = 0
+stdout = """
+test: tests/cmd/fixtures/snapshot.rs
+
+applicability:
+  ignore-test: no
+  only: none
+  ignore: none
+
+execution:
+  profile: self-contained-linux-musl [default]
+  run-flags: none
+  environment: unchanged
+
+sandbox:
+  rootfs: snapshot prepared-postgres [line 1]
+  pull-policy: not-applicable
+  root-disk-mib: inherited-from-snapshot
+  cpus: 1 [default]
+  memory-mib: 512 [default]
+  max-duration-secs: 600 [default]
+  lifecycle: ephemeral [default]
+  network: disabled [default]
+  failure-retention: destroy [default]
+  user: image-default [default]
+  workdir: image-default [default]
+  shell: /bin/sh [default]
+  init: none [default]
+
+requires:
+  none
+"""
+stderr = ""
