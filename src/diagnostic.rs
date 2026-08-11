@@ -17,7 +17,6 @@ pub(crate) enum DiagnosticCode {
     InvalidValue,
     Duplicate,
     Conflict,
-    Unsupported,
 }
 
 impl AsStr for DiagnosticCode {
@@ -28,7 +27,6 @@ impl AsStr for DiagnosticCode {
             Self::InvalidValue => "XT003",
             Self::Duplicate => "XT004",
             Self::Conflict => "XT005",
-            Self::Unsupported => "XT006",
         }
     }
 }

@@ -56,7 +56,7 @@ fn decides_directive_applicability_before_execution() {
 
     for (source, expected) in cases {
         assert_eq!(
-            decide(&specification(source), "aarch64", "aarch64-unknown-linux-musl").unwrap(),
+            decide(&specification(source), "aarch64", "aarch64-unknown-linux-musl"),
             expected,
             "source: {source:?}"
         );
@@ -71,28 +71,13 @@ fn skips_unavailable_dynamic_linking_but_runs_supported_capabilities() {
     );
 
     assert_eq!(
-        decide(&unavailable, "x86_64", "x86_64-unknown-linux-musl").unwrap(),
+        decide(&unavailable, "x86_64", "x86_64-unknown-linux-musl"),
         Decision::Skip(
             "`needs-dynamic-linking` is unavailable in the self-contained Linux-musl profile"
                 .to_owned()
         )
     );
-    assert_eq!(decide(&supported, "x86_64", "x86_64-unknown-linux-musl").unwrap(), Decision::Run);
-}
-
-#[test]
-fn rejects_preserve_on_failure_before_execution() {
-    let error = decide(
-        &specification("//@ preserve-on-failure\n"),
-        "aarch64",
-        "aarch64-unknown-linux-musl",
-    )
-    .unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "`preserve-on-failure` is not supported by one-shot Microsandbox execution"
-    );
+    assert_eq!(decide(&supported, "x86_64", "x86_64-unknown-linux-musl"), Decision::Run);
 }
 
 #[test]

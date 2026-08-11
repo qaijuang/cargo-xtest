@@ -25,7 +25,6 @@ sandbox:
   max-duration-secs: 900 [line 18]
   lifecycle: ephemeral [default]
   network: disabled [default]
-  failure-retention: preserve [line 23]
   user: tester [line 19]
   workdir: /workspace [line 20]
   shell: /bin/bash [line 21]

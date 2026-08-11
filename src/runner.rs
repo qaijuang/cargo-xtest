@@ -89,15 +89,10 @@ fn run_target(
         }
     };
     match decide(&specification, guest_architecture(guest), guest.triple) {
-        Ok(Decision::Run) => {}
-        Ok(Decision::Skip(reason)) => {
+        Decision::Run => {}
+        Decision::Skip(reason) => {
             writeln!(result.stdout, "skipped {}: {reason}", target.source_path.display())?;
             return Ok(true);
-        }
-        Err(error) => {
-            writeln!(result.stderr, "{}: error: {error:#}", target.source_path.display())?;
-            result.status = 1;
-            return Ok(false);
         }
     }
 

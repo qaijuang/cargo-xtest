@@ -13,8 +13,8 @@ use microsandbox_network::policy::NetworkPolicy;
 
 use crate::directive::{Capability, NetworkMode};
 use crate::model::{
-    EffectiveRootfs, EffectiveSpecification, EnvironmentChange, FailureRetention, ImageSource,
-    NetworkAccess, NetworkConfiguration,
+    EffectiveRootfs, EffectiveSpecification, EnvironmentChange, ImageSource, NetworkAccess,
+    NetworkConfiguration,
 };
 
 const DEFAULT_IMAGE: &str =
@@ -91,28 +91,22 @@ pub(crate) fn decide(
     specification: &EffectiveSpecification,
     guest_architecture: &str,
     guest_triple: &str,
-) -> Result<Decision> {
-    if specification.sandbox.failure_retention.value == FailureRetention::Preserve {
-        bail!("`preserve-on-failure` is not supported by one-shot Microsandbox execution");
-    }
+) -> Decision {
     if let Some(ignore_test) = &specification.applicability.ignore_test {
-        return Ok(Decision::Skip(format!("ignored by `ignore-test`: {}", ignore_test.value)));
+        return Decision::Skip(format!("ignored by `ignore-test`: {}", ignore_test.value));
     }
 
     for predicate in &specification.applicability.only {
         match predicate_matches(&predicate.value, guest_architecture, guest_triple) {
             Some(true) => {}
             Some(false) => {
-                return Ok(Decision::Skip(format!(
+                return Decision::Skip(format!(
                     "`only-{}` does not match the Linux-musl guest",
                     predicate.value
-                )));
+                ));
             }
             None => {
-                return Ok(Decision::Skip(format!(
-                    "unknown target predicate `{}`",
-                    predicate.value
-                )));
+                return Decision::Skip(format!("unknown target predicate `{}`", predicate.value));
             }
         }
     }
@@ -120,17 +114,14 @@ pub(crate) fn decide(
     for predicate in &specification.applicability.ignore {
         match predicate_matches(&predicate.value, guest_architecture, guest_triple) {
             Some(true) => {
-                return Ok(Decision::Skip(format!(
+                return Decision::Skip(format!(
                     "`ignore-{}` matches the Linux-musl guest",
                     predicate.value
-                )));
+                ));
             }
             Some(false) => {}
             None => {
-                return Ok(Decision::Skip(format!(
-                    "unknown target predicate `{}`",
-                    predicate.value
-                )));
+                return Decision::Skip(format!("unknown target predicate `{}`", predicate.value));
             }
         }
     }
@@ -140,13 +131,13 @@ pub(crate) fn decide(
         .iter()
         .any(|capability| capability.value == Capability::DynamicLinking)
     {
-        return Ok(Decision::Skip(
+        return Decision::Skip(
             "`needs-dynamic-linking` is unavailable in the self-contained Linux-musl profile"
                 .to_owned(),
-        ));
+        );
     }
 
-    Ok(Decision::Run)
+    Decision::Run
 }
 
 fn predicate_matches(

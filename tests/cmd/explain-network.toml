@@ -61,7 +61,6 @@ sandbox:
       ipv4-pool: 172.20.0.0/16 [line 31]
       ipv6: fd42:6d73:62::2 [line 32]
       ipv6-pool: fd42:6d73:62::/48 [line 33]
-  failure-retention: destroy [default]
   user: image-default [default]
   workdir: image-default [default]
   shell: /bin/sh [default]

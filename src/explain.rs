@@ -9,8 +9,8 @@ use microsandbox_network::policy::{
 use crate::directive::NetworkMode;
 use crate::helpers::AsStr;
 use crate::model::{
-    EffectiveRootfs, EffectiveSpecification, EnvironmentChange, FailureRetention, GuestProcess,
-    ImageSource, NetworkAccess, NetworkConfiguration, Origin, Sandbox, Setting,
+    EffectiveRootfs, EffectiveSpecification, EnvironmentChange, GuestProcess, ImageSource,
+    NetworkAccess, NetworkConfiguration, Origin, Sandbox, Setting,
 };
 
 pub(crate) fn render(specification: &EffectiveSpecification) -> Result<String, fmt::Error> {
@@ -89,15 +89,6 @@ fn render_sandbox(output: &mut String, sandbox: &Sandbox) -> fmt::Result {
     )?;
     writeln!(output, "  lifecycle: ephemeral {}", origin(sandbox.lifecycle.origin))?;
     render_network(output, &sandbox.network)?;
-    let retention = match sandbox.failure_retention.value {
-        FailureRetention::Destroy => "destroy",
-        FailureRetention::Preserve => "preserve",
-    };
-    writeln!(
-        output,
-        "  failure-retention: {retention} {}",
-        origin(sandbox.failure_retention.origin)
-    )?;
     render_guest(output, &sandbox.guest)?;
     writeln!(output)
 }

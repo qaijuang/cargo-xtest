@@ -538,12 +538,6 @@ Microsandbox derives unset addresses, pools, and the MAC from the sandbox
 slot. `trust-host-cas` expands the guest's trust store; use it only when the
 test must trust certificates accepted by the host.
 
-### `preserve-on-failure`
-
-The parser accepts `preserve-on-failure`, but the current one-shot execution
-path cannot preserve a VM. `cargo xtest` reports an error before it creates the
-VM. Do not use this directive yet.
-
 ## Review the defaults
 
 `cargo xtest explain <test-file>` is the authoritative view of effective
@@ -625,8 +619,6 @@ status when it fits in an 8-bit exit status. cargo-xtest uses status 1 otherwise
 - Every guest is Linux-musl and matches the host architecture. macOS and Windows
   guest binaries are not supported.
 - Dynamic linking is unavailable in the self-contained profile.
-- cargo-xtest parses `preserve-on-failure` for explainability but cannot preserve
-  the VM during one-shot execution.
 - The pinned Microsandbox SDK describes Windows host support as preview. Its
   prebuilt feature does not install the required Windows runtime artifacts, and
   this project does not run real-VM tests on Windows.

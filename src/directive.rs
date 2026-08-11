@@ -109,7 +109,6 @@ pub(crate) enum Directive {
     NetworkIpv4Pool(String),
     NetworkIpv6(Ipv6Addr),
     NetworkIpv6Pool(String),
-    PreserveOnFailure,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,15 +218,6 @@ fn scan_line(line_number: usize, line: &str) -> Option<DirectiveLine> {
 
 fn parse_directive(path: &Path, line: &DirectiveLine) -> Result<LocatedDirective, Diagnostic> {
     let location = Location { span: line.span, line_text: line.line_text.clone() };
-    if line.name.starts_with('[') {
-        return Err(diagnostic(
-            DiagnosticCode::Unsupported,
-            "revision-qualified directives are not supported",
-            path,
-            &location,
-        )
-        .help("use separate Cargo test targets or library-level cases"));
-    }
     if line.name.is_empty() {
         return Err(diagnostic(
             DiagnosticCode::MalformedDirective,
@@ -406,10 +396,6 @@ fn parse_sandbox_directive(
         "network-ipv4-pool" => parse_ipv4_pool(path, line, location),
         "network-ipv6" => parse_address::<Ipv6Addr>(path, line, location, "network-ipv6"),
         "network-ipv6-pool" => parse_ipv6_pool(path, line, location),
-        "preserve-on-failure" => {
-            expect_presence(path, line, location)?;
-            Ok(Directive::PreserveOnFailure)
-        }
         name => Err(diagnostic(
             DiagnosticCode::UnknownDirective,
             format!("unknown directive `{name}`"),
@@ -1076,7 +1062,6 @@ fn is_known_name(name: &str) -> bool {
             | "network-ipv4-pool"
             | "network-ipv6"
             | "network-ipv6-pool"
-            | "preserve-on-failure"
     ) || name.starts_with("only-")
         || name.starts_with("ignore-")
 }

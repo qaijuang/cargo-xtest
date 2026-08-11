@@ -126,12 +126,6 @@ pub(crate) struct NetworkInterface {
     pub(crate) ipv6_pool: Setting<Option<String>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FailureRetention {
-    Destroy,
-    Preserve,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum EnvironmentChange {
     Set { key: String, value: String },
@@ -183,7 +177,6 @@ pub(crate) struct Sandbox {
     pub(crate) max_duration_secs: Setting<u64>,
     pub(crate) lifecycle: Setting<Lifecycle>,
     pub(crate) network: Setting<NetworkAccess>,
-    pub(crate) failure_retention: Setting<FailureRetention>,
     pub(crate) guest: GuestProcess,
 }
 
@@ -274,7 +267,6 @@ pub(crate) fn reduce(
     let mut network_ipv4_pool = None;
     let mut network_ipv6 = None;
     let mut network_ipv6_pool = None;
-    let mut failure_retention = None;
 
     for LocatedDirective { value, location } in directives {
         match value {
@@ -617,14 +609,6 @@ pub(crate) fn reduce(
                     location,
                 );
             }
-            Directive::PreserveOnFailure => set_once(
-                path,
-                diagnostics,
-                &mut failure_retention,
-                "preserve-on-failure",
-                FailureRetention::Preserve,
-                location,
-            ),
         }
     }
 
@@ -748,7 +732,6 @@ pub(crate) fn reduce(
             max_duration_secs: into_setting(max_duration, 600),
             lifecycle: Setting::default(Lifecycle::Ephemeral),
             network: effective_network,
-            failure_retention: into_setting(failure_retention, FailureRetention::Destroy),
             guest: GuestProcess {
                 user: into_optional_setting(user),
                 workdir: into_optional_setting(workdir),

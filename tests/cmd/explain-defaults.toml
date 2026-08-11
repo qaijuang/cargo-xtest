@@ -23,7 +23,6 @@ sandbox:
   max-duration-secs: 600 [default]
   lifecycle: ephemeral [default]
   network: disabled [default]
-  failure-retention: destroy [default]
   user: image-default [default]
   workdir: image-default [default]
   shell: /bin/sh [default]

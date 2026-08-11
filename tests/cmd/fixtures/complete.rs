@@ -20,7 +20,6 @@
 //@ workdir: /workspace
 //@ shell: /bin/bash
 //@ init: auto
-//@ preserve-on-failure
 
 #[test]
 fn uses_complete_configuration() {}
