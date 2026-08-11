@@ -1,10 +1,10 @@
+use std::io;
+
 pub(crate) trait AsStr {
     fn as_str(&self) -> &'static str;
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct CliOrRunOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub status: u8,
+pub(crate) fn write_live(output: &mut dyn io::Write, bytes: &[u8]) -> io::Result<()> {
+    output.write_all(bytes)?;
+    output.flush()
 }

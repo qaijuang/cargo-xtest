@@ -1,10 +1,10 @@
 use std::ffi::OsString;
+use std::io;
 use std::path::PathBuf;
 
 use anyhow::Error;
 use clap::{Args, Parser, Subcommand};
 
-use crate::helpers::CliOrRunOutput;
 use crate::{Diagnostics, explain_path, run_project};
 
 #[derive(Debug, Parser)]
@@ -29,36 +29,55 @@ enum Command {
     },
 }
 
-/// Execute command-line behavior without writing to process streams.
+/// Execute command-line behavior and forward output as it becomes available.
 ///
 /// `arguments` includes the executable name and Cargo's leading `xtest`
 /// argument.
-pub fn run_cli(arguments: impl IntoIterator<Item = OsString>) -> CliOrRunOutput {
+///
+/// # Errors
+///
+/// Returns an error when writing to either output stream fails.
+pub fn run_cli(
+    arguments: impl IntoIterator<Item = OsString>,
+    stdout: &mut dyn io::Write,
+    stderr: &mut dyn io::Write,
+) -> io::Result<u8> {
     let arguments = match CargoCli::try_parse_from(arguments) {
         Ok(CargoCli::Xtest(arguments)) => arguments,
-        Err(error) => return claperr(&error),
+        Err(error) => return claperr(&error, stdout, stderr),
     };
 
     let result = match arguments.command {
-        None => run_project(),
-        Some(Command::Explain { test_file }) => explain_path(&test_file)
-            .map(|stdout| CliOrRunOutput { stdout, stderr: String::new(), status: 0 }),
+        None => run_project(stdout, stderr),
+        Some(Command::Explain { test_file }) => explain_path(&test_file).and_then(|output| {
+            stdout.write_all(output.as_bytes())?;
+            Ok(0)
+        }),
     };
-    result.unwrap_or_else(|error| apperr(&error))
-}
-
-fn claperr(error: &clap::Error) -> CliOrRunOutput {
-    let status = u8::try_from(error.exit_code()).unwrap_or(2);
-    if error.use_stderr() {
-        CliOrRunOutput { stdout: String::new(), stderr: error.to_string(), status }
-    } else {
-        CliOrRunOutput { stdout: error.to_string(), stderr: String::new(), status }
+    match result {
+        Ok(status) => Ok(status),
+        Err(error) => apperr(&error, stderr),
     }
 }
 
-fn apperr(error: &Error) -> CliOrRunOutput {
-    let stderr = error
+fn claperr(
+    error: &clap::Error,
+    stdout: &mut dyn io::Write,
+    stderr: &mut dyn io::Write,
+) -> io::Result<u8> {
+    let status = u8::try_from(error.exit_code()).unwrap_or(2);
+    if error.use_stderr() {
+        stderr.write_all(error.to_string().as_bytes())?;
+    } else {
+        stdout.write_all(error.to_string().as_bytes())?;
+    }
+    Ok(status)
+}
+
+fn apperr(error: &Error, stderr: &mut dyn io::Write) -> io::Result<u8> {
+    let output = error
         .downcast_ref::<Diagnostics>()
         .map_or_else(|| format!("error: {error:#}\n"), ToString::to_string);
-    CliOrRunOutput { stdout: String::new(), stderr, status: 1 }
+    stderr.write_all(output.as_bytes())?;
+    Ok(1)
 }

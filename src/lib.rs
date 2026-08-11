@@ -12,40 +12,18 @@ mod explain;
 mod helpers;
 mod model;
 mod runner;
+mod signal;
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, Cursor};
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use anyhow::{Context, Result};
 pub use cli::run_cli;
 pub use diagnostic::Diagnostics;
-pub use helpers::CliOrRunOutput;
 
-/// Discover, compile, and run the current project's integration tests.
-///
-/// Tests are selected from Cargo's default workspace members. Each integration
-/// test target runs as one Linux-musl libtest executable in its own
-/// Microsandbox VM. Test output follows `CARGO_TERM_COLOR` and the host
-/// standard output terminal.
-///
-/// # Errors
-///
-/// Returns an error when project discovery, terminal policy, or result
-/// rendering fails.
-pub fn run_project() -> Result<CliOrRunOutput> {
-    let output = runner::run_current_project()?;
-    Ok(CliOrRunOutput { stdout: output.stdout, stderr: output.stderr, status: output.status })
-}
-
-/// Parse and explain an in-memory Rust test source.
-///
-/// # Errors
-///
-/// Returns diagnostics when the source contains malformed, unsupported, or
-/// conflicting directives.
-pub fn explain_source(path: &Path, source: &str) -> Result<String> {
-    explain_reader(path, Cursor::new(source))
+fn run_project(stdout: &mut dyn io::Write, stderr: &mut dyn io::Write) -> Result<u8> {
+    runner::run_current_project(stdout, stderr)
 }
 
 /// Parse and explain Rust test source supplied by a buffered reader.

@@ -123,3 +123,6 @@ jobs:
 
       - name: Run Microsandbox UI tests
         run: cargo test --test cli --all-features -- cli trycmd=runtime-
+
+      - name: Run Microsandbox streaming and signal tests
+        run: cargo test --test runtime --all-features -- --test-threads=1

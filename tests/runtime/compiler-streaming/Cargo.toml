@@ -1,0 +1,10 @@
+[package]
+name = "cargo-xtest-runtime-compiler-streaming-case"
+edition = "2024"
+
+[dependencies]
+slow-build = { path = "slow-build" }
+
+[[test]]
+name = "compiler_streaming"
+path = "tests/compiler_streaming.rs"

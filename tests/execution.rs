@@ -8,6 +8,8 @@ mod directive;
 mod execution;
 #[path = "../src/model.rs"]
 mod model;
+#[path = "../src/signal.rs"]
+mod signal;
 
 #[path = "../src/helpers.rs"]
 mod helpers;

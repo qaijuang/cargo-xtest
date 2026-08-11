@@ -1,0 +1,7 @@
+[package]
+name = "slow-build"
+edition = "2024"
+build = "build.rs"
+
+[build-dependencies]
+fast-warning = { path = "../fast-warning" }

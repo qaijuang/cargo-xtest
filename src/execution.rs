@@ -1,21 +1,24 @@
 #[path = "execution/terminfo.rs"]
 mod terminfo;
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, anyhow, bail};
-use microsandbox::Sandbox;
 use microsandbox::sandbox::{FsSetAttrs, PullPolicy};
+use microsandbox::{ExecEvent, ExecHandle, MicrosandboxError, Sandbox};
 use microsandbox_network::builder::NetworkBuilder;
 use microsandbox_network::config::NetworkConfig;
 use microsandbox_network::policy::NetworkPolicy;
 
 use crate::directive::{Capability, NetworkMode};
+use crate::helpers::write_live;
 use crate::model::{
     EffectiveRootfs, EffectiveSpecification, EnvironmentChange, ImageSource, NetworkAccess,
     NetworkConfiguration,
 };
+use crate::signal::{HostSignal, HostSignals};
 
 const DEFAULT_IMAGE: &str =
     "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce";
@@ -40,7 +43,7 @@ pub(crate) enum SandboxRootfs {
     Snapshot { reference: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct SandboxConfig {
     pub(crate) executable: PathBuf,
     pub(crate) rootfs: SandboxRootfs,
@@ -59,32 +62,15 @@ pub(crate) struct SandboxConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ExecutionOutcome {
+    Exited(i32),
+    Interrupted(HostSignal),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExecutionOutput {
-    pub(crate) status: i32,
-    pub(crate) stdout: Vec<u8>,
-    pub(crate) stderr: Vec<u8>,
+    pub(crate) outcome: ExecutionOutcome,
     pub(crate) cleanup_error: Option<String>,
-}
-
-pub(crate) fn execute(config: &SandboxConfig) -> Result<ExecutionOutput> {
-    let config = config.clone();
-    run_sdk_worker(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .context("could not initialize the Microsandbox SDK runtime")?;
-        runtime.block_on(execute_in_microsandbox(&config))
-    })
-}
-
-fn run_sdk_worker<T: Send + 'static>(
-    operation: impl FnOnce() -> Result<T> + Send + 'static,
-) -> Result<T> {
-    let worker = std::thread::Builder::new()
-        .name("cargo-xtest-microsandbox".to_owned())
-        .spawn(operation)
-        .context("could not start the Microsandbox SDK worker")?;
-    worker.join().map_err(|_| anyhow!("Microsandbox SDK worker panicked"))?
 }
 
 pub(crate) fn decide(
@@ -355,7 +341,12 @@ fn apply_test_color(arguments: &mut Vec<String>, color: ColorMode) -> bool {
     }
 }
 
-async fn execute_in_microsandbox(config: &SandboxConfig) -> Result<ExecutionOutput> {
+pub(crate) async fn execute(
+    config: &SandboxConfig,
+    stdout: &mut dyn io::Write,
+    stderr: &mut dyn io::Write,
+    signals: &mut HostSignals,
+) -> Result<ExecutionOutput> {
     let mut builder = Sandbox::builder(next_sandbox_name())
         .cpus(config.cpus)
         .memory(config.memory_mib)
@@ -387,15 +378,44 @@ async fn execute_in_microsandbox(config: &SandboxConfig) -> Result<ExecutionOutp
         builder = builder.init(init.clone());
     }
 
-    let sandbox = builder.create().await.context("could not create Microsandbox VM")?;
-    let execution = execute_test(&sandbox, config).await;
+    let mut creation = Box::pin(builder.create());
+    let sandbox = tokio::select! {
+        result = &mut creation => result.context("could not create Microsandbox VM")?,
+        interrupted = signals.receive() => {
+            let mut output = interrupted_output(interrupted?);
+            match creation.await {
+                Ok(sandbox) => {
+                    if let Err(error) = sandbox.stop().await {
+                        append_cleanup_error(
+                            &mut output,
+                            format!("could not stop Microsandbox VM: {error}"),
+                        );
+                    }
+                }
+                Err(error) => append_cleanup_error(
+                    &mut output,
+                    format!("Microsandbox VM creation failed during interruption: {error}"),
+                ),
+            }
+            return Ok(output);
+        }
+    };
+    let execution = tokio::select! {
+        result = prepare_and_start_test(&sandbox, config) => match result {
+            Ok(mut execution) => {
+                stream_execution(&mut execution, stdout, stderr, signals).await
+            }
+            Err(error) => Err(error),
+        },
+        interrupted = signals.receive() => Ok(interrupted_output(interrupted?)),
+    };
     let cleanup = sandbox.stop().await.context("could not stop Microsandbox VM");
 
     match (execution, cleanup) {
         (Ok(output), Ok(())) => Ok(output),
         (Err(error), Ok(())) => Err(error),
         (Ok(mut output), Err(error)) => {
-            output.cleanup_error = Some(format!("{error:#}"));
+            append_cleanup_error(&mut output, format!("{error:#}"));
             Ok(output)
         }
         (Err(execution), Err(cleanup)) => {
@@ -404,7 +424,7 @@ async fn execute_in_microsandbox(config: &SandboxConfig) -> Result<ExecutionOutp
     }
 }
 
-async fn execute_test(sandbox: &Sandbox, config: &SandboxConfig) -> Result<ExecutionOutput> {
+async fn prepare_and_start_test(sandbox: &Sandbox, config: &SandboxConfig) -> Result<ExecHandle> {
     sandbox.fs().copy_from_host(&config.executable, GUEST_EXECUTABLE).await.with_context(|| {
         format!(
             "could not copy test executable `{}` into Microsandbox",
@@ -429,9 +449,9 @@ async fn execute_test(sandbox: &Sandbox, config: &SandboxConfig) -> Result<Execu
             .context("could not write the private terminfo entry in Microsandbox")?;
     }
 
-    let output = if config.unset_environment.is_empty() {
+    let execution = if config.unset_environment.is_empty() {
         sandbox
-            .exec_with(GUEST_EXECUTABLE, |exec| {
+            .exec_stream_with(GUEST_EXECUTABLE, |exec| {
                 exec.args(config.arguments.iter().cloned())
                     .envs(config.environment.iter().cloned())
                     .stdin_null()
@@ -444,19 +464,65 @@ async fn execute_test(sandbox: &Sandbox, config: &SandboxConfig) -> Result<Execu
                 .into_iter()
                 .chain(config.arguments.iter().cloned());
         sandbox
-            .exec_with(config.shell.clone(), |exec| {
+            .exec_stream_with(config.shell.clone(), |exec| {
                 exec.args(arguments).envs(config.environment.iter().cloned()).stdin_null()
             })
             .await
     }
     .context("could not execute test in Microsandbox")?;
+    Ok(execution)
+}
 
-    Ok(ExecutionOutput {
-        status: output.status().code,
-        stdout: output.stdout_bytes().to_vec(),
-        stderr: output.stderr_bytes().to_vec(),
-        cleanup_error: None,
-    })
+async fn stream_execution(
+    execution: &mut ExecHandle,
+    stdout: &mut dyn io::Write,
+    stderr: &mut dyn io::Write,
+    signals: &mut HostSignals,
+) -> Result<ExecutionOutput> {
+    loop {
+        let event = tokio::select! {
+            event = execution.recv() => event,
+            interrupted = signals.receive() => {
+                let interrupted = interrupted?;
+                let mut output = interrupted_output(interrupted);
+                if let Err(error) = execution.signal(interrupted.number()).await {
+                    append_cleanup_error(
+                        &mut output,
+                        format!("could not forward host signal to the Microsandbox test: {error}"),
+                    );
+                }
+                return Ok(output);
+            }
+        };
+        let Some(event) = event else {
+            bail!("Microsandbox execution stream ended without an exit event");
+        };
+        match event {
+            ExecEvent::Started { .. } | ExecEvent::StdinError(_) => {}
+            ExecEvent::Stdout(bytes) => write_live(stdout, &bytes)?,
+            ExecEvent::Stderr(bytes) => write_live(stderr, &bytes)?,
+            ExecEvent::Exited { code } => {
+                return Ok(ExecutionOutput {
+                    outcome: ExecutionOutcome::Exited(code),
+                    cleanup_error: None,
+                });
+            }
+            ExecEvent::Failed(error) => return Err(MicrosandboxError::ExecFailed(error).into()),
+        }
+    }
+}
+
+fn interrupted_output(signal: HostSignal) -> ExecutionOutput {
+    ExecutionOutput { outcome: ExecutionOutcome::Interrupted(signal), cleanup_error: None }
+}
+
+fn append_cleanup_error(output: &mut ExecutionOutput, error: String) {
+    if let Some(existing) = &mut output.cleanup_error {
+        existing.push_str(" -- additionally, ");
+        existing.push_str(&error);
+    } else {
+        output.cleanup_error = Some(error);
+    }
 }
 
 fn next_sandbox_name() -> String {

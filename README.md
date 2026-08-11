@@ -114,7 +114,8 @@ For each `cargo xtest` invocation, cargo-xtest:
 6. Creates an ephemeral VM from the selected OCI image or snapshot.
 7. Copies the compiled test binary into the VM. When color is enabled, it also
    writes a private terminal description into the VM's ephemeral filesystem.
-8. Runs the binary with the configured libtest arguments and environment.
+8. Runs the binary with the configured libtest arguments and environment. It
+   forwards Cargo diagnostics and guest output as they arrive.
 9. Stops the VM and continues to the next target.
 
 cargo-xtest stops at the first directive, compilation, execution, test, or
@@ -130,6 +131,20 @@ you trust.
 The VM receives the test binary but no host directory mount. Its network is
 disabled unless the test file contains a `network` directive. cargo-xtest
 destroys the VM after the test file finishes.
+
+## Interrupt a run
+
+Press Ctrl-C to stop the current run. During compilation, cargo-xtest stops the
+Cargo process. During guest execution, it forwards the interrupt to the test
+binary and then stops the VM. On Unix, `SIGTERM` follows the same path.
+
+cargo-xtest returns status 130 for Ctrl-C and status 143 for `SIGTERM`. It also
+stops the VM when guest output cannot be written or another execution error
+occurs.
+
+Cargo diagnostics and guest stdout and stderr are forwarded as raw bytes. A
+long-running test can therefore show progress without making cargo-xtest retain
+the complete output in memory.
 
 ## Write directives
 
@@ -556,7 +571,6 @@ settings. A test file with no directives uses these defaults:
 | Maximum duration  | 600 seconds                  |
 | Lifecycle         | Ephemeral                    |
 | Network           | Disabled                     |
-| Failure retention | Destroy                      |
 | User              | Image default                |
 | Working directory | Image default                |
 | Shell             | `/bin/sh`                    |
