@@ -1,3 +1,6 @@
+#[path = "execution/terminfo.rs"]
+mod terminfo;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -14,6 +17,12 @@ const DEFAULT_IMAGE: &str =
     "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce";
 const GUEST_EXECUTABLE: &str = "/cargo-xtest-test";
 static NEXT_SANDBOX_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ColorMode {
+    Always,
+    Never,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Decision {
@@ -41,6 +50,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) environment: Vec<(String, String)>,
     pub(crate) unset_environment: Vec<String>,
     pub(crate) arguments: Vec<String>,
+    pub(crate) stage_terminfo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +163,7 @@ fn predicate_matches(
 pub(crate) fn sandbox_config(
     executable: &Path,
     specification: &EffectiveSpecification,
+    color: ColorMode,
 ) -> Result<SandboxConfig> {
     let rootfs = match &specification.sandbox.rootfs {
         EffectiveRootfs::Image { source, pull_policy, root_disk_mib } => SandboxRootfs::Image {
@@ -170,26 +181,37 @@ pub(crate) fn sandbox_config(
 
     let mut environment = Vec::new();
     let mut unset_environment = Vec::new();
+    let mut terminal_environment_is_explicit = false;
     for change in &specification.execution.environment {
         match &change.value {
             EnvironmentChange::Set { key, value } => {
+                terminal_environment_is_explicit |= key == "TERM" || key == "TERMINFO";
                 environment.push((key.clone(), value.clone()));
             }
             EnvironmentChange::Unset(key) => {
                 if !is_portable_shell_identifier(key) {
                     bail!("`unset-exec-env` key `{key}` is not a portable shell identifier");
                 }
+                terminal_environment_is_explicit |= key == "TERM" || key == "TERMINFO";
                 unset_environment.push(key.clone());
             }
         }
     }
 
-    let arguments = specification
+    let mut arguments: Vec<_> = specification
         .execution
         .run_flags
         .iter()
         .flat_map(|flags| flags.value.iter().cloned())
         .collect();
+    let force_color = apply_test_color(&mut arguments, color);
+    let stage_terminfo = force_color && !terminal_environment_is_explicit;
+    if stage_terminfo {
+        environment.extend([
+            ("TERM".to_owned(), terminfo::NAME.to_owned()),
+            ("TERMINFO".to_owned(), terminfo::DIRECTORY.to_owned()),
+        ]);
+    }
 
     Ok(SandboxConfig {
         executable: executable.to_owned(),
@@ -204,7 +226,32 @@ pub(crate) fn sandbox_config(
         environment,
         unset_environment,
         arguments,
+        stage_terminfo,
     })
+}
+
+fn apply_test_color(arguments: &mut Vec<String>, color: ColorMode) -> bool {
+    let options_end =
+        arguments.iter().position(|argument| argument == "--").unwrap_or(arguments.len());
+    let explicit_force_color =
+        arguments[..options_end].iter().enumerate().find_map(|(index, argument)| {
+            argument.strip_prefix("--color=").map(|value| value == "always").or_else(|| {
+                (argument == "--color")
+                    .then(|| arguments.get(index + 1).is_some_and(|value| value == "always"))
+            })
+        });
+    if let Some(force_color) = explicit_force_color {
+        force_color
+    } else {
+        arguments.insert(
+            options_end,
+            match color {
+                ColorMode::Always => "--color=always".to_owned(),
+                ColorMode::Never => "--color=never".to_owned(),
+            },
+        );
+        color == ColorMode::Always
+    }
 }
 
 async fn execute_in_microsandbox(config: &SandboxConfig) -> Result<ExecutionOutput> {
@@ -262,6 +309,18 @@ async fn execute_test(sandbox: &Sandbox, config: &SandboxConfig) -> Result<Execu
         .set_stat(GUEST_EXECUTABLE, true, FsSetAttrs { mode: Some(0o755), ..FsSetAttrs::default() })
         .await
         .context("could not make the test executable runnable in Microsandbox")?;
+    if config.stage_terminfo {
+        sandbox
+            .fs()
+            .mkdir(terminfo::ENTRY_DIRECTORY)
+            .await
+            .context("could not create the private terminfo directory in Microsandbox")?;
+        sandbox
+            .fs()
+            .write(terminfo::ENTRY_PATH, terminfo::ENTRY)
+            .await
+            .context("could not write the private terminfo entry in Microsandbox")?;
+    }
 
     let output = if config.unset_environment.is_empty() {
         sandbox

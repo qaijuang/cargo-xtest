@@ -1,26 +1,33 @@
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
+use std::io::{self, IsTerminal};
 use std::process::{Command, ExitStatus, Output};
 
 use anyhow::{Context, Error, Result};
+use cargo_metadata::MetadataCommand;
 
 use crate::cargo::{
     GuestTarget, TestTarget, cargo_test_command, discover_from_metadata, guest_target_for_arch,
     parse_artifact_messages, rendered_diagnostics,
 };
-use crate::execution::{Decision, decide, execute, sandbox_config};
+use crate::execution::{ColorMode, Decision, decide, execute, sandbox_config};
 use crate::{CliOrRunOutput, Diagnostics, load_path};
 
 pub(crate) fn run_current_project() -> Result<CliOrRunOutput> {
     let project_root = env::current_dir().context("could not determine the current directory")?;
     let cargo = env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
     let guest = guest_target_for_arch(env::consts::ARCH)?;
+    let color =
+        resolve_color_mode(env::var_os("CARGO_TERM_COLOR").as_deref(), io::stdout().is_terminal());
     let mut result = CliOrRunOutput::default();
-    let mut metadata_command = Command::new(&cargo);
-    metadata_command
-        .args(["metadata", "--format-version=1", "--no-deps", "--color=never"])
-        .current_dir(&project_root);
+    let mut metadata = MetadataCommand::new();
+    metadata
+        .cargo_path(cargo.clone())
+        .current_dir(&project_root)
+        .no_deps()
+        .other_options(vec!["--color=never".to_owned()]);
+    let mut metadata_command = metadata.cargo_command();
     let Some(metadata) = start_process(&mut metadata_command, "Cargo metadata", &mut result)?
     else {
         return Ok(result);
@@ -42,17 +49,19 @@ pub(crate) fn run_current_project() -> Result<CliOrRunOutput> {
             return Ok(result);
         }
     };
-    let targets = match discover_from_metadata(metadata) {
-        Ok(targets) => targets,
+    let metadata = match MetadataCommand::parse(metadata) {
+        Ok(metadata) => metadata,
         Err(error) => {
+            let error = Error::new(error).context("invalid Cargo metadata");
             writeln!(result.stderr, "error: {error:#}")?;
             result.status = 1;
             return Ok(result);
         }
     };
+    let targets = discover_from_metadata(&metadata);
 
     for target in &targets {
-        if !run_target(target, guest, &cargo, &mut result)? {
+        if !run_target(target, guest, color, &cargo, &mut result)? {
             break;
         }
     }
@@ -63,6 +72,7 @@ pub(crate) fn run_current_project() -> Result<CliOrRunOutput> {
 fn run_target(
     target: &TestTarget,
     guest: GuestTarget,
+    color: ColorMode,
     cargo: &OsString,
     result: &mut CliOrRunOutput,
 ) -> Result<bool> {
@@ -138,7 +148,7 @@ fn run_target(
     result.stderr.push_str(&artifact.diagnostics);
     append_bytes(&mut result.stderr, &build.stderr);
 
-    let config = match sandbox_config(&artifact.executable, &specification) {
+    let config = match sandbox_config(&artifact.executable, &specification, color) {
         Ok(plan) => plan,
         Err(error) => {
             writeln!(result.stderr, "{}: error: {error:#}", target.source_path.display())?;
@@ -200,6 +210,15 @@ fn start_process(
 
 fn guest_architecture(guest: GuestTarget) -> &'static str {
     guest.triple.split_once('-').map_or(guest.triple, |(architecture, _)| architecture)
+}
+
+fn resolve_color_mode(value: Option<&OsStr>, is_terminal: bool) -> ColorMode {
+    match value.and_then(OsStr::to_str) {
+        Some("always") => ColorMode::Always,
+        Some("never") => ColorMode::Never,
+        _ if is_terminal => ColorMode::Always,
+        _ => ColorMode::Never,
+    }
 }
 
 fn append_bytes(output: &mut String, bytes: &[u8]) {

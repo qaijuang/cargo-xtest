@@ -10,11 +10,12 @@ use cargo::{
     TestTarget, cargo_test_command, discover_from_metadata, guest_target_for_arch,
     parse_artifact_messages,
 };
+use cargo_metadata::MetadataCommand;
 
 fn selected_target() -> TestTarget {
     TestTarget {
         package_id: "path+file:///workspace/selected#0.1.0".to_owned(),
-        package_root: PathBuf::from("/workspace/selected"),
+        workspace_root: PathBuf::from("/workspace"),
         name: "alpha".to_owned(),
         source_path: PathBuf::from("/workspace/selected/tests/alpha.rs"),
     }
@@ -110,20 +111,21 @@ fn discovers_default_member_integration_tests() {
 }
 "#;
 
-    let targets = discover_from_metadata(metadata).unwrap();
+    let metadata = MetadataCommand::parse(metadata).unwrap();
+    let targets = discover_from_metadata(&metadata);
 
     assert_eq!(
         targets,
         vec![
             TestTarget {
                 package_id: "path+file:///workspace/selected#0.1.0".to_owned(),
-                package_root: PathBuf::from("/workspace/selected"),
+                workspace_root: PathBuf::from("/workspace"),
                 name: "alpha".to_owned(),
                 source_path: PathBuf::from("/workspace/selected/tests/alpha.rs"),
             },
             TestTarget {
                 package_id: "path+file:///workspace/selected#0.1.0".to_owned(),
-                package_root: PathBuf::from("/workspace/selected"),
+                workspace_root: PathBuf::from("/workspace"),
                 name: "zeta".to_owned(),
                 source_path: PathBuf::from("/workspace/selected/tests/zeta.rs"),
             },
@@ -160,7 +162,7 @@ fn constructs_the_per_test_file_cargo_command() {
     let command = cargo_test_command(OsString::from("/opt/toolchains/cargo"), &target, guest);
 
     assert_eq!(command.program, OsString::from("/opt/toolchains/cargo"));
-    assert_eq!(command.current_dir, PathBuf::from("/workspace/selected"));
+    assert_eq!(command.current_dir, PathBuf::from("/workspace"));
     assert_eq!(
         command.arguments,
         [
@@ -197,6 +199,18 @@ fn retains_rendered_compiler_diagnostics() {
     let output = parse_artifact_messages(messages, &selected_target()).unwrap();
 
     assert_eq!(output.diagnostics, "warning: dependency warning\n");
+}
+
+#[test]
+fn preserves_non_json_tool_output() {
+    let messages = r#"third-party build output
+{"reason":"compiler-artifact","package_id":"path+file:///workspace/selected#0.1.0","manifest_path":"/workspace/selected/Cargo.toml","target":{"kind":["test"],"crate_types":["bin"],"name":"alpha","src_path":"/workspace/selected/tests/alpha.rs","edition":"2024","doc":false,"doctest":false,"test":true},"profile":{"opt_level":"0","debuginfo":2,"debug_assertions":true,"overflow_checks":true,"test":true},"features":[],"filenames":["/workspace/target/alpha"],"executable":"/workspace/target/alpha","fresh":false}
+{"reason":"build-finished","success":true}
+"#;
+
+    let output = parse_artifact_messages(messages, &selected_target()).unwrap();
+
+    assert_eq!(output.diagnostics, "third-party build output\n");
 }
 
 #[test]

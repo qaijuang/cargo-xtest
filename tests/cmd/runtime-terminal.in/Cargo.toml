@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-terminal-case"
+edition = "2024"
+
+[[test]]
+name = "runtime_terminal"
+path = "tests/runtime_terminal.rs"

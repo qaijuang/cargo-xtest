@@ -6,13 +6,20 @@ use std::time::Duration;
 #[test]
 fn cli() {
     let cases = trycmd::TestCases::new();
+    cases.env("CARGO_TERM_COLOR", "never");
     cases.case("tests/cmd/*.toml").timeout(Duration::from_secs(300));
     cases.skip("tests/cmd/runtime-*.toml").run();
 
     if is_vm_tests_enabled() {
         for runtime_case in ["tests/cmd/runtime-pass.toml", "tests/cmd/runtime-failure.toml"] {
-            trycmd::TestCases::new().case(runtime_case).timeout(Duration::from_secs(300)).run();
+            let cases = trycmd::TestCases::new();
+            cases.env("CARGO_TERM_COLOR", "never");
+            cases.case(runtime_case).timeout(Duration::from_secs(300)).run();
         }
+        trycmd::TestCases::new()
+            .case("tests/cmd/runtime-terminal.toml")
+            .timeout(Duration::from_secs(300))
+            .run();
     }
 }
 

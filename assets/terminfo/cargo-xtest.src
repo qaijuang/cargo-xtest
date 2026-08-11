@@ -1,0 +1,5 @@
+cargo-xtest|cargo-xtest ANSI color,
+	colors#8, pairs#64,
+	setaf=\E[3%p1%dm,
+	setab=\E[4%p1%dm,
+	sgr0=\E[0m,

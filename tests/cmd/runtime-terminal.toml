@@ -1,0 +1,15 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+env.add.CARGO_TERM_COLOR = "always"
+fs.sandbox = true
+status.code = 0
+stdout = """
+running [CWD]/tests/runtime_terminal.rs
+
+running 1 test
+test harness_stages_terminal_support ... \u001B[32mok\u001B[0m
+
+test result: \u001B[32mok\u001B[0m. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+"""
+stderr = ""

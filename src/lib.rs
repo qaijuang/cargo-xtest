@@ -26,11 +26,13 @@ pub use helpers::CliOrRunOutput;
 ///
 /// Tests are selected from Cargo's default workspace members. Each integration
 /// test target runs as one Linux-musl libtest executable in its own
-/// Microsandbox VM.
+/// Microsandbox VM. Test output follows `CARGO_TERM_COLOR` and the host
+/// standard output terminal.
 ///
 /// # Errors
 ///
-/// Returns an error when project discovery or result rendering fails.
+/// Returns an error when project discovery, terminal policy, or result
+/// rendering fails.
 pub fn run_project() -> Result<CliOrRunOutput> {
     let output = runner::run_current_project()?;
     Ok(CliOrRunOutput { stdout: output.stdout, stderr: output.stderr, status: output.status })

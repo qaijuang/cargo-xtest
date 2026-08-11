@@ -112,9 +112,10 @@ For each `cargo xtest` invocation, cargo-xtest:
 4. Skips the target when an applicability rule excludes its Linux-musl guest.
 5. Uses the Cargo executable that started cargo-xtest to compile that target.
 6. Creates an ephemeral VM from the selected OCI image or snapshot.
-7. Copies the compiled test binary into the VM and runs it with the configured
-   libtest arguments and environment.
-8. Stops the VM and continues to the next target.
+7. Copies the compiled test binary into the VM. When color is enabled, it also
+   writes a private terminal description into the VM's ephemeral filesystem.
+8. Runs the binary with the configured libtest arguments and environment.
+9. Stops the VM and continues to the next target.
 
 cargo-xtest stops at the first directive, compilation, execution, test, or
 cleanup failure. A skipped target does not stop the run.
@@ -225,6 +226,18 @@ appends arguments in source order.
 
 Whitespace separates arguments. Single quotes group text that contains spaces.
 Double-quote and backslash escape rules are not supported.
+
+### Color output
+
+cargo-xtest follows `CARGO_TERM_COLOR`. `always` enables color, `never`
+disables it, and `auto` uses color when cargo-xtest's host standard output is a
+terminal. A `--color` value in `run-flags` takes precedence.
+
+When color is enabled, cargo-xtest writes its own small terminal description to
+the ephemeral VM and sets `TERM` and `TERMINFO` for libtest. This works with the
+built-in image, an `image` directive, or a snapshot without changing that root
+filesystem. If the test explicitly sets or unsets `TERM` or `TERMINFO`,
+cargo-xtest leaves terminal setup to the test and its image.
 
 ### `exec-env`
 

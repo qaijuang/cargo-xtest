@@ -3,12 +3,12 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
-use cargo_metadata::{Message, MetadataCommand, TargetKind};
+use cargo_metadata::{Message, Metadata};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TestTarget {
     pub(crate) package_id: String,
-    pub(crate) package_root: PathBuf,
+    pub(crate) workspace_root: PathBuf,
     pub(crate) name: String,
     pub(crate) source_path: PathBuf,
 }
@@ -73,7 +73,7 @@ pub(crate) fn cargo_test_command(
         .map(OsString::from)
         .collect(),
         environment: vec![(OsString::from(guest.linker_environment), OsString::from("rust-lld"))],
-        current_dir: target.package_root.clone(),
+        current_dir: target.workspace_root.clone(),
     }
 }
 
@@ -115,8 +115,6 @@ fn scan_messages(messages: &str, target: Option<&TestTarget>) -> Result<(String,
                     && artifact.target.name == target.name
                     && artifact.target.src_path.as_std_path() == target.source_path
                     && artifact.target.is_test()
-                    && artifact.target.test
-                    && artifact.profile.test
                 {
                     let executable = artifact.executable.ok_or_else(|| {
                         anyhow!(
@@ -128,7 +126,8 @@ fn scan_messages(messages: &str, target: Option<&TestTarget>) -> Result<(String,
                 }
             }
             Message::TextLine(line) if !line.is_empty() => {
-                bail!("invalid Cargo JSON message: {line}");
+                diagnostics.push_str(&line);
+                diagnostics.push('\n');
             }
             _ => {}
         }
@@ -136,35 +135,21 @@ fn scan_messages(messages: &str, target: Option<&TestTarget>) -> Result<(String,
     Ok((diagnostics, executables))
 }
 
-pub(crate) fn discover_from_metadata(metadata: &str) -> Result<Vec<TestTarget>> {
-    let metadata = MetadataCommand::parse(metadata).context("invalid Cargo metadata")?;
-    if metadata.workspace_default_members.is_missing() {
-        bail!("Cargo metadata did not report default workspace members");
-    }
+pub(crate) fn discover_from_metadata(metadata: &Metadata) -> Vec<TestTarget> {
+    let workspace_root = metadata.workspace_root.clone().into_std_path_buf();
     let mut targets = Vec::new();
 
-    for package in metadata.packages {
-        if !metadata.workspace_default_members.contains(&package.id) {
-            continue;
-        }
-
-        let package_root = package.manifest_path.parent().ok_or_else(|| {
-            anyhow!(
-                "invalid Cargo metadata: manifest path `{}` has no parent",
-                package.manifest_path
-            )
-        })?;
-
-        for target in package.targets {
-            if !target.test || !target.kind.contains(&TargetKind::Test) {
+    for package in metadata.workspace_default_packages() {
+        for target in &package.targets {
+            if !target.test || !target.is_test() {
                 continue;
             }
 
             targets.push(TestTarget {
                 package_id: package.id.repr.clone(),
-                package_root: package_root.to_owned().into_std_path_buf(),
-                name: target.name,
-                source_path: target.src_path.into_std_path_buf(),
+                workspace_root: workspace_root.clone(),
+                name: target.name.clone(),
+                source_path: target.src_path.clone().into_std_path_buf(),
             });
         }
     }
@@ -175,5 +160,5 @@ pub(crate) fn discover_from_metadata(metadata: &str) -> Result<Vec<TestTarget>> 
             .then_with(|| left.package_id.cmp(&right.package_id))
             .then_with(|| left.name.cmp(&right.name))
     });
-    Ok(targets)
+    targets
 }
