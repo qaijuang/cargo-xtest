@@ -51,6 +51,10 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install nightly --no-self-update --profile minimal --component rust-src,rustfmt,clippy,miri --target ${{ matrix.guest_target }}
 
+      - name: Install Microsandbox system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install --yes libcap-ng-dev
+
       - name: Check formatting
         run: cargo fmt --all --check
 
@@ -58,9 +62,18 @@ jobs:
         run: cargo test --all-features --all-targets
 
       - name: Run tests (miri)
+        if: matrix.os != 'windows-latest'
         run: cargo miri test --all-features --all-targets
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-backtrace=full
+
+      # https://github.com/rust-lang/miri/issues/5234
+      - name: Run tests (miri, Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo miri test --all-features --all-targets
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-backtrace=full
+          __CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT: 1
 
       - name: Run clippy
         run: cargo clippy --all-features --all-targets -- -D warnings -D clippy::all -W clippy::pedantic -D clippy::cargo
@@ -85,6 +98,9 @@ jobs:
 
       - name: Install Rust
         run: rustup toolchain install nightly --no-self-update --profile minimal --target x86_64-unknown-linux-musl
+
+      - name: Install Microsandbox system dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libcap-ng-dev
 
       - name: Configure Microsandbox runtime
         run: echo "MSB_HOME=${RUNNER_TEMP}/microsandbox" >> "${GITHUB_ENV}"
