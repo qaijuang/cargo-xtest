@@ -69,7 +69,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_XTEST_VM_TESTS: 1
-      MSB_HOME: ${{ runner.temp }}/microsandbox
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -86,6 +85,9 @@ jobs:
 
       - name: Install Rust
         run: rustup toolchain install nightly --no-self-update --profile minimal --target x86_64-unknown-linux-musl
+
+      - name: Configure Microsandbox runtime
+        run: echo "MSB_HOME=${RUNNER_TEMP}/microsandbox" >> "${GITHUB_ENV}"
 
       - name: Enable KVM
         run: |
