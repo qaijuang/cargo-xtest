@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network-incomplete-ca.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: `tls-intercept-ca-cert` requires `tls-intercept-ca-key`
+ --> tests/cmd/fixtures/network-incomplete-ca.rs:3:5
+  |
+3 | //@ tls-intercept-ca-cert: {{src-base}}/intercept.pem
+  |     ^^^^^^^^^^^^^^^^^^^^^ certificate declared here
+  |
+  = help: provide both interception CA files or neither
+"""

@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-network-case"
+edition = "2024"
+
+[[test]]
+name = "runtime_network"
+path = "tests/runtime_network.rs"

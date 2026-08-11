@@ -392,6 +392,7 @@ dependencies = [
  "cargo_metadata",
  "clap",
  "microsandbox",
+ "microsandbox-network",
  "tokio",
  "trycmd",
 ]

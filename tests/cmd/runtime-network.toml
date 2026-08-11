@@ -1,0 +1,23 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+fs.sandbox = true
+status.code = 0
+stdout = """
+running [CWD]/tests/runtime_network.rs
+
+running 1 test
+test public_network_reaches_an_http_server ... ok
+
+successes:
+
+---- public_network_reaches_an_http_server stdout ----
+public network available inside Microsandbox
+
+
+successes:
+    public_network_reaches_an_http_server
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in [..]
+
+"""
+stderr = ""

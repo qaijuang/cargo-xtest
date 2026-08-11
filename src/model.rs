@@ -1,10 +1,17 @@
 use std::collections::BTreeMap;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 
 use microsandbox::sandbox::PullPolicy;
+use microsandbox_network::config::PublishedPort;
+use microsandbox_network::dns::Nameserver;
+use microsandbox_network::policy::{Action, Rule};
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, SourceSpan};
-use crate::directive::{Capability, Directive, LocatedDirective, Location};
+use crate::directive::{
+    Capability, Directive, LocatedDirective, Location, NetworkMode, ScopedCertificate,
+    ScopedVerification,
+};
 use crate::helpers::AsStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,9 +73,57 @@ pub(crate) enum Lifecycle {
     Ephemeral,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) enum NetworkAccess {
     Disabled,
+    Enabled(Box<NetworkConfiguration>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NetworkConfiguration {
+    pub(crate) mode: NetworkMode,
+    pub(crate) default_egress: Setting<Action>,
+    pub(crate) default_ingress: Setting<Action>,
+    pub(crate) rules: Vec<Setting<Rule>>,
+    pub(crate) ports: Vec<Setting<PublishedPort>>,
+    pub(crate) dns: DnsConfiguration,
+    pub(crate) tls: TlsConfiguration,
+    pub(crate) max_connections: Setting<Option<usize>>,
+    pub(crate) trust_host_cas: Setting<bool>,
+    pub(crate) interface: NetworkInterface,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DnsConfiguration {
+    pub(crate) servers: Vec<Setting<Nameserver>>,
+    pub(crate) query_timeout_ms: Setting<u64>,
+    pub(crate) rebind_protection: Setting<bool>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TlsConfiguration {
+    pub(crate) enabled: Setting<bool>,
+    pub(crate) intercepted_ports: Vec<Setting<u16>>,
+    pub(crate) bypass: Vec<Setting<String>>,
+    pub(crate) verify_upstream: Setting<bool>,
+    pub(crate) scoped_verification: Vec<Setting<ScopedVerification>>,
+    pub(crate) block_quic: Setting<bool>,
+    pub(crate) upstream_ca_certificates: Vec<Setting<String>>,
+    pub(crate) scoped_upstream_ca_certificates: Vec<Setting<ScopedCertificate>>,
+    pub(crate) intercept_ca_certificate: Setting<Option<String>>,
+    pub(crate) intercept_ca_key: Setting<Option<String>>,
+    pub(crate) cache_capacity: Setting<usize>,
+    pub(crate) validity_hours: Setting<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NetworkInterface {
+    pub(crate) mac: Setting<Option<[u8; 6]>>,
+    pub(crate) mtu: Setting<Option<u16>>,
+    pub(crate) ipv4: Setting<Option<Ipv4Addr>>,
+    pub(crate) ipv4_pool: Setting<Option<String>>,
+    pub(crate) ipv6: Setting<Option<Ipv6Addr>>,
+    pub(crate) ipv6_pool: Setting<Option<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +175,7 @@ pub(crate) struct GuestProcess {
     pub(crate) init: Setting<Option<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct Sandbox {
     pub(crate) rootfs: EffectiveRootfs,
     pub(crate) cpus: Setting<u8>,
@@ -132,7 +187,7 @@ pub(crate) struct Sandbox {
     pub(crate) guest: GuestProcess,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct EffectiveSpecification {
     pub(crate) path: PathBuf,
     pub(crate) applicability: Applicability,
@@ -189,6 +244,36 @@ pub(crate) fn reduce(
     let mut shell = None;
     let mut init = None;
     let mut network = None;
+    let mut network_configuration_location = None;
+    let mut custom_network_location = None;
+    let mut network_default_egress = None;
+    let mut network_default_ingress = None;
+    let mut network_rules = Vec::new();
+    let mut published_ports = Vec::new();
+    let mut dns_servers = Vec::new();
+    let mut dns_query_timeout = None;
+    let mut dns_rebind_protection = None;
+    let mut tls_intercept = None;
+    let mut tls_configuration_location = None;
+    let mut tls_intercept_ports = Vec::new();
+    let mut tls_bypass = Vec::new();
+    let mut tls_verify_upstream = None;
+    let mut tls_scoped_verification = Vec::new();
+    let mut tls_block_quic = None;
+    let mut tls_upstream_ca_certificates = Vec::new();
+    let mut tls_scoped_upstream_ca_certificates = Vec::new();
+    let mut tls_intercept_ca_certificate = None;
+    let mut tls_intercept_ca_key = None;
+    let mut tls_cache_capacity = None;
+    let mut tls_validity_hours = None;
+    let mut max_network_connections = None;
+    let mut trust_host_cas = None;
+    let mut network_mac = None;
+    let mut network_mtu = None;
+    let mut network_ipv4 = None;
+    let mut network_ipv4_pool = None;
+    let mut network_ipv6 = None;
+    let mut network_ipv6_pool = None;
     let mut failure_retention = None;
 
     for LocatedDirective { value, location } in directives {
@@ -283,14 +368,255 @@ pub(crate) fn reduce(
             Directive::Init(value) => {
                 set_once(path, diagnostics, &mut init, "init", value, location);
             }
-            Directive::DisableNetwork => set_once(
-                path,
-                diagnostics,
-                &mut network,
-                "disable-network",
-                NetworkAccess::Disabled,
-                location,
-            ),
+            Directive::Network(mode) => {
+                set_once(path, diagnostics, &mut network, "network", mode, location);
+            }
+            Directive::NetworkDefaultEgress(action) => {
+                remember_location(&mut network_configuration_location, &location);
+                remember_location(&mut custom_network_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut network_default_egress,
+                    "network-default-egress",
+                    action,
+                    location,
+                );
+            }
+            Directive::NetworkDefaultIngress(action) => {
+                remember_location(&mut network_configuration_location, &location);
+                remember_location(&mut custom_network_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut network_default_ingress,
+                    "network-default-ingress",
+                    action,
+                    location,
+                );
+            }
+            Directive::NetworkRule(rule) => {
+                remember_location(&mut network_configuration_location, &location);
+                remember_location(&mut custom_network_location, &location);
+                network_rules.push(Setting::explicit(rule, &location));
+            }
+            Directive::PublishPort(port) => {
+                remember_location(&mut network_configuration_location, &location);
+                published_ports.push(Setting::explicit(port, &location));
+            }
+            Directive::DnsServer(server) => {
+                remember_location(&mut network_configuration_location, &location);
+                dns_servers.push(Setting::explicit(server, &location));
+            }
+            Directive::DnsQueryTimeout(timeout) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut dns_query_timeout,
+                    "dns-query-timeout",
+                    timeout,
+                    location,
+                );
+            }
+            Directive::NoDnsRebindProtection => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut dns_rebind_protection,
+                    "no-dns-rebind-protection",
+                    false,
+                    location,
+                );
+            }
+            Directive::TlsIntercept => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut tls_intercept, "tls-intercept", true, location);
+            }
+            Directive::TlsInterceptPort(port) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                tls_intercept_ports.push(Setting::explicit(port, &location));
+            }
+            Directive::TlsBypass(pattern) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                tls_bypass.push(Setting::explicit(pattern, &location));
+            }
+            Directive::NoTlsVerifyUpstream => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_verify_upstream,
+                    "no-tls-verify-upstream",
+                    false,
+                    location,
+                );
+            }
+            Directive::TlsVerifyUpstreamFor(verification) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                tls_scoped_verification.push(Setting::explicit(verification, &location));
+            }
+            Directive::NoTlsBlockQuic => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_block_quic,
+                    "no-tls-block-quic",
+                    false,
+                    location,
+                );
+            }
+            Directive::TlsUpstreamCaCert(certificate) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                tls_upstream_ca_certificates.push(Setting::explicit(certificate, &location));
+            }
+            Directive::TlsUpstreamCaCertFor(certificate) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                tls_scoped_upstream_ca_certificates.push(Setting::explicit(certificate, &location));
+            }
+            Directive::TlsInterceptCaCert(certificate) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_intercept_ca_certificate,
+                    "tls-intercept-ca-cert",
+                    certificate,
+                    location,
+                );
+            }
+            Directive::TlsInterceptCaKey(key) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_intercept_ca_key,
+                    "tls-intercept-ca-key",
+                    key,
+                    location,
+                );
+            }
+            Directive::TlsCertCacheCapacity(capacity) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_cache_capacity,
+                    "tls-cert-cache-capacity",
+                    capacity,
+                    location,
+                );
+            }
+            Directive::TlsCertValidityHours(hours) => {
+                remember_tls_locations(
+                    &mut network_configuration_location,
+                    &mut tls_configuration_location,
+                    &location,
+                );
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut tls_validity_hours,
+                    "tls-cert-validity-hours",
+                    hours,
+                    location,
+                );
+            }
+            Directive::MaxNetworkConnections(max) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut max_network_connections,
+                    "max-network-connections",
+                    max,
+                    location,
+                );
+            }
+            Directive::TrustHostCas => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut trust_host_cas, "trust-host-cas", true, location);
+            }
+            Directive::NetworkMac(mac) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut network_mac, "network-mac", mac, location);
+            }
+            Directive::NetworkMtu(mtu) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut network_mtu, "network-mtu", mtu, location);
+            }
+            Directive::NetworkIpv4(address) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut network_ipv4, "network-ipv4", address, location);
+            }
+            Directive::NetworkIpv4Pool(pool) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut network_ipv4_pool,
+                    "network-ipv4-pool",
+                    pool,
+                    location,
+                );
+            }
+            Directive::NetworkIpv6(address) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(path, diagnostics, &mut network_ipv6, "network-ipv6", address, location);
+            }
+            Directive::NetworkIpv6Pool(pool) => {
+                remember_location(&mut network_configuration_location, &location);
+                set_once(
+                    path,
+                    diagnostics,
+                    &mut network_ipv6_pool,
+                    "network-ipv6-pool",
+                    pool,
+                    location,
+                );
+            }
             Directive::PreserveOnFailure => set_once(
                 path,
                 diagnostics,
@@ -320,6 +646,70 @@ pub(crate) fn reduce(
             snapshot_location,
         );
     }
+
+    validate_network_contract(
+        path,
+        diagnostics,
+        network.as_ref(),
+        network_configuration_location.as_ref(),
+        custom_network_location.as_ref(),
+        tls_intercept.as_ref(),
+        tls_configuration_location.as_ref(),
+        tls_intercept_ca_certificate.as_ref(),
+        tls_intercept_ca_key.as_ref(),
+    );
+
+    let effective_network = network.map_or_else(
+        || Setting::default(NetworkAccess::Disabled),
+        |LocatedValue { value: mode, location }| {
+            let intercepted_ports = if tls_intercept_ports.is_empty() {
+                vec![Setting::default(443)]
+            } else {
+                tls_intercept_ports
+            };
+            Setting::explicit(
+                NetworkAccess::Enabled(Box::new(NetworkConfiguration {
+                    mode,
+                    default_egress: into_setting(network_default_egress, Action::Deny),
+                    default_ingress: into_setting(network_default_ingress, Action::Deny),
+                    rules: network_rules,
+                    ports: published_ports,
+                    dns: DnsConfiguration {
+                        servers: dns_servers,
+                        query_timeout_ms: into_setting(dns_query_timeout, 5000),
+                        rebind_protection: into_setting(dns_rebind_protection, true),
+                    },
+                    tls: TlsConfiguration {
+                        enabled: into_setting(tls_intercept, false),
+                        intercepted_ports,
+                        bypass: tls_bypass,
+                        verify_upstream: into_setting(tls_verify_upstream, true),
+                        scoped_verification: tls_scoped_verification,
+                        block_quic: into_setting(tls_block_quic, true),
+                        upstream_ca_certificates: tls_upstream_ca_certificates,
+                        scoped_upstream_ca_certificates: tls_scoped_upstream_ca_certificates,
+                        intercept_ca_certificate: into_optional_setting(
+                            tls_intercept_ca_certificate,
+                        ),
+                        intercept_ca_key: into_optional_setting(tls_intercept_ca_key),
+                        cache_capacity: into_setting(tls_cache_capacity, 1000),
+                        validity_hours: into_setting(tls_validity_hours, 24),
+                    },
+                    max_connections: into_optional_setting(max_network_connections),
+                    trust_host_cas: into_setting(trust_host_cas, false),
+                    interface: NetworkInterface {
+                        mac: into_optional_setting(network_mac),
+                        mtu: into_optional_setting(network_mtu),
+                        ipv4: into_optional_setting(network_ipv4),
+                        ipv4_pool: into_optional_setting(network_ipv4_pool),
+                        ipv6: into_optional_setting(network_ipv6),
+                        ipv6_pool: into_optional_setting(network_ipv6_pool),
+                    },
+                })),
+                &location,
+            )
+        },
+    );
 
     let effective_rootfs = match rootfs {
         Some(LocatedValue { value: RootfsChoice::Snapshot(reference), location }) => {
@@ -357,7 +747,7 @@ pub(crate) fn reduce(
             memory_mib: into_setting(memory, 512),
             max_duration_secs: into_setting(max_duration, 600),
             lifecycle: Setting::default(Lifecycle::Ephemeral),
-            network: into_setting(network, NetworkAccess::Disabled),
+            network: effective_network,
             failure_retention: into_setting(failure_retention, FailureRetention::Destroy),
             guest: GuestProcess {
                 user: into_optional_setting(user),
@@ -367,6 +757,101 @@ pub(crate) fn reduce(
             },
         },
         capabilities,
+    }
+}
+
+fn remember_location(slot: &mut Option<Location>, location: &Location) {
+    if slot.is_none() {
+        *slot = Some(location.clone());
+    }
+}
+
+fn remember_tls_locations(
+    network: &mut Option<Location>,
+    tls: &mut Option<Location>,
+    location: &Location,
+) {
+    remember_location(network, location);
+    remember_location(tls, location);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_network_contract(
+    path: &Path,
+    diagnostics: &mut Diagnostics,
+    network: Option<&LocatedValue<NetworkMode>>,
+    network_configuration: Option<&Location>,
+    custom_configuration: Option<&Location>,
+    tls_intercept: Option<&LocatedValue<bool>>,
+    tls_configuration: Option<&Location>,
+    intercept_ca_certificate: Option<&LocatedValue<String>>,
+    intercept_ca_key: Option<&LocatedValue<String>>,
+) {
+    let Some(network) = network else {
+        if let Some(location) = network_configuration {
+            diagnostics.push(
+                Diagnostic::new(
+                    DiagnosticCode::Conflict,
+                    "network configuration requires a `network` directive",
+                    path,
+                    location.label("network setting declared here"),
+                )
+                .help("add `//@ network` or `//@ network: value`"),
+            );
+        }
+        return;
+    };
+
+    if !matches!(network.value, NetworkMode::Custom)
+        && let Some(location) = custom_configuration
+    {
+        diagnostics.push(
+            Diagnostic::new(
+                DiagnosticCode::Conflict,
+                "custom policy settings require `network: custom`",
+                path,
+                location.label("custom policy setting declared here"),
+            )
+            .related(network.location.span, "network mode declared here")
+            .help("write `//@ network: custom`"),
+        );
+    }
+
+    if tls_intercept.is_none()
+        && let Some(location) = tls_configuration
+    {
+        diagnostics.push(
+            Diagnostic::new(
+                DiagnosticCode::Conflict,
+                "TLS settings require `tls-intercept`",
+                path,
+                location.label("TLS setting declared here"),
+            )
+            .help("add `//@ tls-intercept`"),
+        );
+        return;
+    }
+
+    match (intercept_ca_certificate, intercept_ca_key) {
+        (Some(certificate), None) => diagnostics.push(
+            Diagnostic::new(
+                DiagnosticCode::Conflict,
+                "`tls-intercept-ca-cert` requires `tls-intercept-ca-key`",
+                path,
+                certificate.location.label("certificate declared here"),
+            )
+            .help("provide both interception CA files or neither"),
+        ),
+        (None, Some(key)) => diagnostics.push(
+            Diagnostic::new(
+                DiagnosticCode::Conflict,
+                "`tls-intercept-ca-key` requires `tls-intercept-ca-cert`",
+                path,
+                key.location.label("private key declared here"),
+            )
+            .help("provide both interception CA files or neither"),
+        ),
+        (Some(_), Some(_)) | (None, None) => {}
     }
 }
 

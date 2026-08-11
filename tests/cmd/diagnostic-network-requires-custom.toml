@@ -1,0 +1,14 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network-requires-custom.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: custom policy settings require `network: custom`
+ --> tests/cmd/fixtures/network-requires-custom.rs:2:5
+  |
+2 | //@ network-rule: egress deny domain=example.com
+  |     ^^^^^^^^^^^^ custom policy setting declared here
+  |
+  = note: network mode declared here at tests/cmd/fixtures/network-requires-custom.rs:1:5
+  = help: write `//@ network: custom`
+"""

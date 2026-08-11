@@ -1,0 +1,73 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network.rs"]
+status.code = 0
+stdout = """
+test: tests/cmd/fixtures/network.rs
+
+applicability:
+  ignore-test: no
+  only: none
+  ignore: none
+
+execution:
+  profile: self-contained-linux-musl [default]
+  run-flags: none
+  environment: unchanged
+
+sandbox:
+  rootfs: built-in-runtime [default]
+  pull-policy: if-missing [default]
+  root-disk-mib: 4096 [default]
+  cpus: 1 [default]
+  memory-mib: 512 [default]
+  max-duration-secs: 600 [default]
+  lifecycle: ephemeral [default]
+  network: enabled [line 1]
+    policy: custom
+    default-egress: deny [line 2]
+    default-ingress: deny [line 3]
+    rules:
+      - egress allow domain-suffix=example.com protocols=tcp ports=443 [line 4]
+      - ingress allow group=public protocols=tcp ports=8080 [line 5]
+    published-ports:
+      - tcp 127.0.0.1:18080 -> 8080 [line 6]
+      - udp 127.0.0.1:15353 -> 5353 [line 7]
+      - tcp [::1]:18081 -> 8081 [line 8]
+    dns:
+      servers:
+        - 1.1.1.1:53 [line 9]
+        - dns.google:53 [line 10]
+      query-timeout-ms: 2500 [line 11]
+      rebind-protection: no [line 12]
+    tls-intercept: yes [line 13]
+      port: 443 [line 14]
+      port: 8443 [line 15]
+      bypass: *.internal.example [line 16]
+      verify-upstream: no [line 17]
+      verify-upstream-for: api.example.com yes [line 18]
+      block-quic: no [line 19]
+      upstream-ca-cert: {{src-base}}/certificates/upstream.pem [line 20]
+      upstream-ca-cert-for: *.internal.example={{src-base}}/certificates/internal.pem [line 21]
+      intercept-ca-cert: {{src-base}}/certificates/intercept.pem [line 22]
+      intercept-ca-key: {{src-base}}/certificates/intercept-key.pem [line 23]
+      cert-cache-capacity: 128 [line 24]
+      cert-validity-hours: 12 [line 25]
+    max-connections: 64 [line 26]
+    trust-host-cas: yes [line 27]
+    interface:
+      mac: 02:00:00:00:00:2a [line 28]
+      mtu: 1400 [line 29]
+      ipv4: 172.20.0.2 [line 30]
+      ipv4-pool: 172.20.0.0/16 [line 31]
+      ipv6: fd42:6d73:62::2 [line 32]
+      ipv6-pool: fd42:6d73:62::/48 [line 33]
+  failure-retention: destroy [default]
+  user: image-default [default]
+  workdir: image-default [default]
+  shell: /bin/sh [default]
+  init: none [default]
+
+requires:
+  none
+"""
+stderr = ""

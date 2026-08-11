@@ -20,7 +20,6 @@
 //@ workdir: /workspace
 //@ shell: /bin/bash
 //@ init: auto
-//@ disable-network
 //@ preserve-on-failure
 
 #[test]

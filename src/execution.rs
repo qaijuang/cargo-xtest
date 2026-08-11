@@ -7,10 +7,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, Result, anyhow, bail};
 use microsandbox::Sandbox;
 use microsandbox::sandbox::{FsSetAttrs, PullPolicy};
+use microsandbox_network::builder::NetworkBuilder;
+use microsandbox_network::config::NetworkConfig;
+use microsandbox_network::policy::NetworkPolicy;
 
-use crate::directive::Capability;
+use crate::directive::{Capability, NetworkMode};
 use crate::model::{
     EffectiveRootfs, EffectiveSpecification, EnvironmentChange, FailureRetention, ImageSource,
+    NetworkAccess, NetworkConfiguration,
 };
 
 const DEFAULT_IMAGE: &str =
@@ -36,7 +40,7 @@ pub(crate) enum SandboxRootfs {
     Snapshot { reference: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct SandboxConfig {
     pub(crate) executable: PathBuf,
     pub(crate) rootfs: SandboxRootfs,
@@ -51,6 +55,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) unset_environment: Vec<String>,
     pub(crate) arguments: Vec<String>,
     pub(crate) stage_terminfo: bool,
+    pub(crate) network: Option<NetworkConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,6 +217,7 @@ pub(crate) fn sandbox_config(
             ("TERMINFO".to_owned(), terminfo::DIRECTORY.to_owned()),
         ]);
     }
+    let network = network_config(specification)?;
 
     Ok(SandboxConfig {
         executable: executable.to_owned(),
@@ -227,7 +233,111 @@ pub(crate) fn sandbox_config(
         unset_environment,
         arguments,
         stage_terminfo,
+        network,
     })
+}
+
+pub(crate) fn network_config(
+    specification: &EffectiveSpecification,
+) -> Result<Option<NetworkConfig>> {
+    let NetworkAccess::Enabled(configuration) = &specification.sandbox.network.value else {
+        return Ok(None);
+    };
+
+    let policy = match &configuration.mode {
+        NetworkMode::Profiles(profiles) => NetworkPolicy::from_profiles(profiles.iter().copied()),
+        NetworkMode::None => NetworkPolicy::none(),
+        NetworkMode::AllowAll => NetworkPolicy::allow_all(),
+        NetworkMode::Custom => NetworkPolicy {
+            default_egress: configuration.default_egress.value,
+            default_ingress: configuration.default_ingress.value,
+            rules: configuration.rules.iter().map(|rule| rule.value.clone()).collect(),
+        },
+    };
+    let ports = configuration.ports.iter().map(|port| port.value.clone()).collect();
+    let mut config = NetworkConfig { policy, ports, ..NetworkConfig::default() };
+    config.dns.nameservers =
+        configuration.dns.servers.iter().map(|server| server.value.clone()).collect();
+    config.dns.query_timeout_ms = configuration.dns.query_timeout_ms.value;
+    config.dns.rebind_protection = configuration.dns.rebind_protection.value;
+    config.max_connections = configuration.max_connections.value;
+    config.trust_host_cas = configuration.trust_host_cas.value;
+    config.interface.mac = configuration.interface.mac.value;
+    config.interface.mtu = configuration.interface.mtu.value;
+    config.interface.ipv4_address = configuration.interface.ipv4.value;
+    config.interface.ipv4_pool = configuration
+        .interface
+        .ipv4_pool
+        .value
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .context("invalid validated IPv4 network pool")?;
+    config.interface.ipv6_address = configuration.interface.ipv6.value;
+    config.interface.ipv6_pool = configuration
+        .interface
+        .ipv6_pool
+        .value
+        .as_deref()
+        .map(str::parse)
+        .transpose()
+        .context("invalid validated IPv6 network pool")?;
+    config.tls = tls_network_config(&specification.path, configuration)?.tls;
+    Ok(Some(config))
+}
+
+fn tls_network_config(
+    test_source: &Path,
+    configuration: &NetworkConfiguration,
+) -> Result<NetworkConfig> {
+    let mut builder = NetworkBuilder::new();
+    if configuration.tls.enabled.value {
+        builder = builder.tls(|mut tls| {
+            tls = tls.intercepted_ports(
+                configuration.tls.intercepted_ports.iter().map(|port| port.value).collect(),
+            );
+            for pattern in &configuration.tls.bypass {
+                tls = tls.bypass(pattern.value.clone());
+            }
+            tls = tls
+                .verify_upstream(configuration.tls.verify_upstream.value)
+                .block_quic(configuration.tls.block_quic.value);
+            for verification in &configuration.tls.scoped_verification {
+                tls = tls.verify_upstream_for(
+                    verification.value.pattern.clone(),
+                    verification.value.verify,
+                );
+            }
+            for certificate in &configuration.tls.upstream_ca_certificates {
+                tls = tls.upstream_ca_cert(resolve_host_path(test_source, &certificate.value));
+            }
+            for certificate in &configuration.tls.scoped_upstream_ca_certificates {
+                tls = tls.upstream_ca_cert_for(
+                    certificate.value.pattern.clone(),
+                    resolve_host_path(test_source, &certificate.value.path),
+                );
+            }
+            if let Some(certificate) = &configuration.tls.intercept_ca_certificate.value {
+                tls = tls.intercept_ca_cert(resolve_host_path(test_source, certificate));
+            }
+            if let Some(key) = &configuration.tls.intercept_ca_key.value {
+                tls = tls.intercept_ca_key(resolve_host_path(test_source, key));
+            }
+            tls
+        });
+    }
+    let mut config = builder.build().context("invalid network configuration")?;
+    config.tls.cache.capacity = configuration.tls.cache_capacity.value;
+    config.tls.cache.validity_hours = configuration.tls.validity_hours.value;
+    Ok(config)
+}
+
+fn resolve_host_path(test_source: &Path, value: &str) -> PathBuf {
+    let Some(suffix) = value.strip_prefix("{{src-base}}") else {
+        return PathBuf::from(value);
+    };
+    let base = test_source.parent().unwrap_or_else(|| Path::new("."));
+    base.join(suffix.strip_prefix('/').unwrap_or(suffix))
 }
 
 fn apply_test_color(arguments: &mut Vec<String>, color: ColorMode) -> bool {
@@ -260,9 +370,15 @@ async fn execute_in_microsandbox(config: &SandboxConfig) -> Result<ExecutionOutp
         .memory(config.memory_mib)
         .max_duration(config.max_duration_secs)
         .shell(config.shell.clone())
-        .disable_network()
         .quiet_logs()
         .ephemeral(true);
+
+    builder = if let Some(network) = &config.network {
+        let network = network.clone();
+        builder.network(|_| NetworkBuilder::from_config(network))
+    } else {
+        builder.disable_network()
+    };
 
     builder = match &config.rootfs {
         SandboxRootfs::Image { reference, pull_policy, root_disk_mib } => {

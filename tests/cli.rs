@@ -11,7 +11,11 @@ fn cli() {
     cases.skip("tests/cmd/runtime-*.toml").run();
 
     if is_vm_tests_enabled() {
-        for runtime_case in ["tests/cmd/runtime-pass.toml", "tests/cmd/runtime-failure.toml"] {
+        for runtime_case in [
+            "tests/cmd/runtime-pass.toml",
+            "tests/cmd/runtime-failure.toml",
+            "tests/cmd/runtime-network.toml",
+        ] {
             let cases = trycmd::TestCases::new();
             cases.env("CARGO_TERM_COLOR", "never");
             cases.case(runtime_case).timeout(Duration::from_secs(300)).run();

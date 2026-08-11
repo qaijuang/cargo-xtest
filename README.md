@@ -128,7 +128,8 @@ the host before cargo-xtest creates the VM. Run cargo-xtest only on source code
 you trust.
 
 The VM receives the test binary but no host directory mount. Its network is
-disabled, and cargo-xtest destroys it after the test file finishes.
+disabled unless the test file contains a `network` directive. cargo-xtest
+destroys the VM after the test file finishes.
 
 ## Write directives
 
@@ -367,16 +368,175 @@ Set the guest init program to `auto` or an absolute guest path:
 //@ init: auto
 ```
 
-### `disable-network`
+## Configure the network
 
-Explicitly disable the guest network:
+Network access is disabled when a test file has no `network` directive. Use the
+presence form to allow DNS and public internet addresses:
 
 ```rust
-//@ disable-network
+//@ network
 ```
 
-Network access is already disabled by default. This directive records that
-choice explicitly; cargo-xtest does not provide an enable-network directive.
+This default blocks routed access to private, link-local, metadata, multicast,
+loopback, and host addresses. The guest's own loopback interface stays inside
+the guest. This mode does not publish a guest port.
+
+### Choose a network policy
+
+Combine the `public`, `private`, and `host` profiles when a test needs more
+than public access:
+
+```rust
+//@ network: public,private,host
+```
+
+`host` means the sandbox host through its gateway address and
+`host.microsandbox.internal`. It does not mean guest loopback.
+
+These modes cannot be combined with profiles:
+
+| Value       | Behavior                                                         |
+| ----------- | ---------------------------------------------------------------- |
+| `none`      | Create the network interface but deny ingress and egress.        |
+| `allow-all` | Allow every ingress and egress destination.                      |
+| `custom`    | Use ordered rules and deny unmatched traffic in both directions. |
+
+`allow-all` removes the destination protections provided by the default
+profile. Use it only when the test requires unrestricted traffic.
+
+### Write a custom policy
+
+A custom policy denies unmatched ingress and egress by default. You may change
+either default:
+
+```rust
+//@ network: custom
+//@ network-default-egress: deny
+//@ network-default-ingress: deny
+```
+
+Add rules in evaluation order. The first matching rule wins:
+
+```rust
+//@ network-rule: egress allow domain-suffix=example.com protocols=tcp ports=443
+//@ network-rule: ingress allow group=public protocols=tcp ports=8080
+```
+
+Use this grammar:
+
+```text
+DIRECTION ACTION DESTINATION [protocols=LIST] [ports=LIST]
+```
+
+- Direction: `egress`, `ingress`, or `any`.
+- Action: `allow` or `deny`.
+- Destination: `any`, `ip=ADDRESS`, `cidr=CIDR`, `domain=NAME`,
+  `domain-suffix=NAME`, or `group=NAME`.
+- Destination group: `public`, `loopback`, `private`, `link-local`,
+  `metadata`, `multicast`, or `host`.
+- Protocol list: a comma-separated list of `tcp`, `udp`, `icmpv4`, or
+  `icmpv6`. Omit it to match every protocol.
+- Port list: comma-separated ports or inclusive ranges such as
+  `80,443,8000-8100`. Omit it to match every guest-side port.
+
+Ingress and `any` rules cannot use ICMP because Microsandbox has no inbound
+ICMP path.
+
+### Publish guest ports
+
+Map a host port to a guest port with TCP or UDP:
+
+```rust
+//@ network
+//@ publish-port: tcp 18080:8080
+//@ publish-port: udp 127.0.0.1:15353:5353
+```
+
+The shorter form binds to host loopback. Add a host IP address before the host
+port to choose another bind address. Put an IPv6 bind address in brackets.
+Publishing on a non-loopback address can expose the guest service to other
+machines.
+
+### Configure DNS
+
+By default, Microsandbox uses the host's configured resolvers, applies a
+5,000-millisecond query timeout, and blocks DNS rebinding. Override the
+resolvers or timeout when needed:
+
+```rust
+//@ network
+//@ dns-server: 1.1.1.1
+//@ dns-server: dns.google:53
+//@ dns-query-timeout: 2500
+```
+
+`dns-server` accepts an IP address or host name with an optional port. Repeat
+it to set more than one resolver. Use this presence directive only when the
+test must accept private addresses returned by public DNS:
+
+```rust
+//@ no-dns-rebind-protection
+```
+
+### Configure TLS interception
+
+Enable TLS interception explicitly:
+
+```rust
+//@ network
+//@ tls-intercept
+```
+
+It intercepts TCP port 443, verifies upstream certificates, and blocks QUIC on
+intercepted ports by default. If you add any `tls-intercept-port` directive,
+the explicit port list replaces the default. Repeat the directive to intercept
+more than one port. These directives refine that behavior:
+
+| Directive                  | Value or effect                                    |
+| -------------------------- | -------------------------------------------------- |
+| `tls-intercept-port`       | Set a TCP port in the explicit interception list.  |
+| `tls-bypass`               | Bypass an exact host or `*.suffix` pattern.        |
+| `no-tls-verify-upstream`   | Stop verifying every upstream certificate.         |
+| `tls-verify-upstream-for`  | Set `HOST-PATTERN yes\|no` for one host pattern.   |
+| `no-tls-block-quic`        | Allow UDP on intercepted ports.                    |
+| `tls-upstream-ca-cert`     | Trust a host CA certificate for every upstream.    |
+| `tls-upstream-ca-cert-for` | Trust `HOST-PATTERN=HOST-PATH` for matching hosts. |
+| `tls-intercept-ca-cert`    | Use a specific interception CA certificate.        |
+| `tls-intercept-ca-key`     | Use the matching interception CA private key.      |
+| `tls-cert-cache-capacity`  | Set the positive certificate-cache entry limit.    |
+| `tls-cert-validity-hours`  | Set generated certificate validity in hours.       |
+
+Provide both interception CA files or neither. Without them, Microsandbox
+generates and persists an interception CA in its runtime directory.
+
+CA paths must be absolute host paths or begin with `{{src-base}}`, which means
+the directory containing the test file:
+
+```rust
+//@ tls-upstream-ca-cert: {{src-base}}/certificates/test-ca.pem
+```
+
+The CA files remain on the host. cargo-xtest passes their resolved paths to
+Microsandbox and does not mount the test directory into the VM.
+
+### Set connection and interface options
+
+Use these directives only with `network`:
+
+| Directive                 | Effect                                                   |
+| ------------------------- | -------------------------------------------------------- |
+| `max-network-connections` | Set the concurrent guest connection limit. Default: 256. |
+| `trust-host-cas`          | Copy the host's trusted root CAs into the guest.         |
+| `network-mac`             | Set six hexadecimal MAC octets.                          |
+| `network-mtu`             | Set the interface MTU. Default: 1500.                    |
+| `network-ipv4`            | Set the guest IPv4 address.                              |
+| `network-ipv4-pool`       | Set the IPv4 pool; its prefix must be `/30` or shorter.  |
+| `network-ipv6`            | Set the guest IPv6 address.                              |
+| `network-ipv6-pool`       | Set the IPv6 pool; its prefix must be `/64` or shorter.  |
+
+Microsandbox derives unset addresses, pools, and the MAC from the sandbox
+slot. `trust-host-cas` expands the guest's trust store; use it only when the
+test must trust certificates accepted by the host.
 
 ### `preserve-on-failure`
 
@@ -418,6 +578,10 @@ These directives may repeat:
 - `run-flags`, which appends more libtest arguments.
 - `only-<predicate>` and `ignore-<predicate>`, when each predicate is unique.
 - `exec-env` and `unset-exec-env`, when each key is unique.
+- `network-rule`, whose source order controls first-match evaluation.
+- `publish-port`, `dns-server`, `tls-intercept-port`, `tls-bypass`,
+  `tls-verify-upstream-for`, `tls-upstream-ca-cert`, and
+  `tls-upstream-ca-cert-for`.
 
 The root filesystem rules add two specific conflicts:
 
@@ -461,8 +625,6 @@ status when it fits in an 8-bit exit status. cargo-xtest uses status 1 otherwise
 - Every guest is Linux-musl and matches the host architecture. macOS and Windows
   guest binaries are not supported.
 - Dynamic linking is unavailable in the self-contained profile.
-- cargo-xtest always disables network access and provides no setting to enable
-  it.
 - cargo-xtest parses `preserve-on-failure` for explainability but cannot preserve
   the VM during one-shot execution.
 - The pinned Microsandbox SDK describes Windows host support as preview. Its

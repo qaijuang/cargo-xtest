@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network-requires-root.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: network configuration requires a `network` directive
+ --> tests/cmd/fixtures/network-requires-root.rs:1:5
+  |
+1 | //@ dns-server: 1.1.1.1
+  |     ^^^^^^^^^^ network setting declared here
+  |
+  = help: add `//@ network` or `//@ network: value`
+"""

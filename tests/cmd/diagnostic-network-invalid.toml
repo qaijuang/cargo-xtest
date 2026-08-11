@@ -1,0 +1,77 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network-invalid.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT003]: invalid `network-rule` value
+ --> tests/cmd/fixtures/network-invalid.rs:3:5
+  |
+3 | //@ network-rule: sideways allow any
+  |     ^^^^^^^^^^^^ directive declared here
+  |
+  = help: expected `DIRECTION ACTION DESTINATION [protocols=LIST] [ports=LIST]`
+
+error[XT003]: invalid `network-rule`: rule #0: invalid port range 9000..8000; lo must be <= hi
+ --> tests/cmd/fixtures/network-invalid.rs:4:5
+  |
+4 | //@ network-rule: egress allow any ports=9000-8000
+  |     ^^^^^^^^^^^^ directive declared here
+
+error[XT003]: invalid `publish-port` value
+ --> tests/cmd/fixtures/network-invalid.rs:5:5
+  |
+5 | //@ publish-port: sctp 8080:80
+  |     ^^^^^^^^^^^^ directive declared here
+  |
+  = help: expected `tcp|udp [HOST-ADDRESS:]HOST-PORT:GUEST-PORT`
+
+error[XT003]: invalid nameserver "dns google"; expected IP, IP:PORT, HOST, or HOST:PORT
+ --> tests/cmd/fixtures/network-invalid.rs:6:5
+  |
+6 | //@ dns-server: dns google
+  |     ^^^^^^^^^^ directive declared here
+
+error[XT003]: invalid `tls-verify-upstream-for` value
+ --> tests/cmd/fixtures/network-invalid.rs:7:5
+  |
+7 | //@ tls-verify-upstream-for: example.com maybe
+  |     ^^^^^^^^^^^^^^^^^^^^^^^ directive declared here
+  |
+  = help: expected `HOST-PATTERN yes|no`
+
+error[XT003]: host path must be absolute or start with `{{src-base}}`
+ --> tests/cmd/fixtures/network-invalid.rs:8:5
+  |
+8 | //@ tls-upstream-ca-cert: relative/ca.pem
+  |     ^^^^^^^^^^^^^^^^^^^^ directive declared here
+
+error[XT003]: `network-mac` must contain six hexadecimal octets
+ --> tests/cmd/fixtures/network-invalid.rs:9:5
+  |
+9 | //@ network-mac: 02:00:00:00:00
+  |     ^^^^^^^^^^^ directive declared here
+
+error[XT003]: `network-ipv4` must be an IP address
+  --> tests/cmd/fixtures/network-invalid.rs:10:5
+   |
+10 | //@ network-ipv4: 999.0.0.1
+   |     ^^^^^^^^^^^^ directive declared here
+
+error[XT003]: invalid IPv4 pool `172.20.0.0/31`: prefix must be /30 or shorter
+  --> tests/cmd/fixtures/network-invalid.rs:11:5
+   |
+11 | //@ network-ipv4-pool: 172.20.0.0/31
+   |     ^^^^^^^^^^^^^^^^^ directive declared here
+
+error[XT003]: `network-ipv6` must be an IP address
+  --> tests/cmd/fixtures/network-invalid.rs:12:5
+   |
+12 | //@ network-ipv6: not-an-address
+   |     ^^^^^^^^^^^^ directive declared here
+
+error[XT003]: invalid IPv6 pool `fd42:6d73:62::/65`: prefix must be /64 or shorter
+  --> tests/cmd/fixtures/network-invalid.rs:13:5
+   |
+13 | //@ network-ipv6-pool: fd42:6d73:62::/65
+   |     ^^^^^^^^^^^^^^^^^ directive declared here
+"""
