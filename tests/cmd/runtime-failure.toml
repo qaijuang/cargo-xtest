@@ -1,5 +1,6 @@
 bin.name = "cargo-xtest"
 args = ["xtest"]
+env.add.CARGO_TERM_QUIET = "true"
 fs.sandbox = true
 status.code = 101
 stdout = """

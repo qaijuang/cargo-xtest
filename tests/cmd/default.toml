@@ -1,7 +1,10 @@
 bin.name = "cargo-xtest"
 args = ["xtest"]
+env.add.CARGO_TERM_QUIET = "true"
+fs.sandbox = true
 status.code = 0
 stdout = """
+skipped src/lib.rs: cargo-xtest runs integration-test targets only
 skipped [CWD]/tests/ignored.rs: ignored by `ignore-test`: (trycmd fixture)
 """
 stderr = ""

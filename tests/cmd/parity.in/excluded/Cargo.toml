@@ -1,0 +1,8 @@
+[package]
+name = "excluded"
+edition = "2024"
+
+[[test]]
+name = "excluded"
+path = "tests/excluded.rs"
+

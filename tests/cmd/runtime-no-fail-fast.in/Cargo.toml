@@ -1,0 +1,11 @@
+[package]
+name = "cargo-xtest-runtime-no-fail-fast-case"
+edition = "2024"
+
+[[test]]
+name = "a_failure"
+path = "tests/a_failure.rs"
+
+[[test]]
+name = "b_success"
+path = "tests/b_success.rs"

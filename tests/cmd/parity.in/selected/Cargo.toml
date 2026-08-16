@@ -1,0 +1,11 @@
+[package]
+name = "selected"
+edition = "2024"
+
+[features]
+enabled = []
+
+[[test]]
+name = "selected"
+path = "tests/selected.rs"
+

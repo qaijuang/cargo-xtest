@@ -4,13 +4,43 @@ status.code = 0
 stdout = """
 Run Rust integration tests in Microsandbox
 
-Usage: cargo xtest [COMMAND]
+Usage: cargo xtest [OPTIONS] [TESTNAME] [-- <ARGS>...] [COMMAND]
 
 Commands:
   explain  Show the effective test specification
 
+Arguments:
+  [TESTNAME]  Filter tests by name
+  [ARGS]...   Arguments passed to each integration-test executable
+
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+  -p, --package <SPEC>           Test only the specified package
+      --workspace                Test every package in the workspace
+      --all                      Deprecated alias for --workspace
+      --exclude <SPEC>           Exclude a package from a workspace test
+  -F, --features <FEATURES>      Activate features for the selected packages
+      --all-features             Activate every available feature
+      --no-default-features      Do not activate default features
+      --test <NAME>              Test only the specified integration-test target
+      --no-run                   Compile test artifacts without starting Microsandbox
+      --no-fail-fast             Continue after an integration-test executable fails
+  -j, --jobs <N>                 Number of parallel Cargo build jobs
+  -r, --release                  Build optimized test artifacts
+      --profile <NAME>           Build with the specified profile
+      --target-dir <DIRECTORY>   Directory for generated Cargo artifacts
+      --timings[=<FMTS>]         Write Cargo build timing information
+  -q, --quiet                    Do not print cargo-xtest or Cargo informational output
+  -v, --verbose...               Use verbose Cargo output. Repeat for more detail
+      --color <WHEN>             Control colored Cargo and test output
+      --future-incompat-report   Display Cargo's future-incompatibility report
+      --config <KEY=VALUE|PATH>  Override a Cargo configuration value
+  -Z <FLAG>                      Pass an unstable option to Cargo
+  -m, --manifest-path <PATH>     Path to Cargo.toml
+      --ignore-rust-version      Ignore package rust-version requirements
+      --locked                   Require Cargo.lock to remain unchanged
+      --offline                  Prevent Cargo from accessing the network
+      --frozen                   Require Cargo.lock to remain unchanged and stay offline
+  -h, --help                     Print help
+  -V, --version                  Print version
 """
 stderr = ""

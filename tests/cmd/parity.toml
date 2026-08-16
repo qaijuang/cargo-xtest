@@ -1,0 +1,14 @@
+bin.name = "cargo-xtest"
+args = [
+  "xtest",
+  "-m", "Cargo.toml",
+  "--package", "selected",
+  "--features", "enabled",
+  "--test", "selected",
+  "--no-run",
+  "--quiet",
+]
+fs.sandbox = true
+status.code = 0
+stdout = ""
+stderr = ""

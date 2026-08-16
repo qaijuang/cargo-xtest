@@ -1,0 +1,9 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "--jobs", "not-a-number", "--no-run", "--quiet"]
+fs.base = "parity.in"
+fs.sandbox = true
+status.code = 101
+stdout = ""
+stderr = """
+error: could not parse `not-a-number`. Number of parallel jobs should be `default` or a number.
+"""

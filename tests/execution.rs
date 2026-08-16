@@ -85,7 +85,7 @@ fn skips_unavailable_dynamic_linking_but_runs_supported_capabilities() {
 #[test]
 fn constructs_the_safe_default_sandbox_config() {
     let config =
-        sandbox_config(Path::new("/host/target/alpha"), &specification(""), ColorMode::Never)
+        sandbox_config(Path::new("/host/target/alpha"), &specification(""), ColorMode::Never, &[])
             .unwrap();
 
     assert_eq!(config.executable, PathBuf::from("/host/target/alpha"));
@@ -117,6 +117,7 @@ fn stages_private_terminal_support_when_color_is_enabled() {
         Path::new("/host/target/colored"),
         &specification("//@ image: example.test/runtime@sha256:1234\n"),
         ColorMode::Always,
+        &[],
     )
     .unwrap();
 
@@ -145,6 +146,7 @@ fn explicit_terminal_environment_takes_precedence() {
             Path::new("/host/target/colored"),
             &specification(source),
             ColorMode::Always,
+            &[],
         )
         .unwrap();
 
@@ -168,6 +170,7 @@ fn explicit_libtest_color_takes_precedence() {
         Path::new("/host/target/plain"),
         &specification("//@ run-flags: --color never\n"),
         ColorMode::Always,
+        &[],
     )
     .unwrap();
     assert_eq!(disabled.arguments, ["--color", "never"]);
@@ -177,6 +180,7 @@ fn explicit_libtest_color_takes_precedence() {
         Path::new("/host/target/colored"),
         &specification("//@ run-flags: --color=always\n"),
         ColorMode::Never,
+        &[],
     )
     .unwrap();
     assert_eq!(enabled.arguments, ["--color=always"]);
@@ -189,6 +193,7 @@ fn places_the_default_color_option_before_the_option_terminator() {
         Path::new("/host/target/colored"),
         &specification("//@ run-flags: -- named-test\n"),
         ColorMode::Always,
+        &[],
     )
     .unwrap();
     assert_eq!(enabled.arguments, ["--color=always", "--", "named-test"]);
@@ -198,6 +203,7 @@ fn places_the_default_color_option_before_the_option_terminator() {
         Path::new("/host/target/plain"),
         &specification("//@ run-flags: -- --color=always\n"),
         ColorMode::Never,
+        &[],
     )
     .unwrap();
     assert_eq!(disabled.arguments, ["--color=never", "--", "--color=always"]);
@@ -226,6 +232,7 @@ fn translates_explicit_image_resources_guest_and_libtest_configuration() {
         Path::new("/host/target/configured"),
         &specification(source),
         ColorMode::Never,
+        &[],
     )
     .unwrap();
 
@@ -264,6 +271,7 @@ fn translates_snapshot_rootfs_without_image_only_options() {
         Path::new("/host/target/snapshot"),
         &specification("//@ from-snapshot: nightly-base\n"),
         ColorMode::Never,
+        &[],
     )
     .unwrap();
 
@@ -389,9 +397,13 @@ fn translates_each_network_mode_without_weakening_the_disabled_default() {
 #[test]
 fn uses_a_guest_wrapper_only_for_portable_environment_unsets() {
     let source = "//@ exec-env: KEEP=yes\n//@ unset-exec-env: REMOVE_ME\n";
-    let config =
-        sandbox_config(Path::new("/host/target/unset"), &specification(source), ColorMode::Never)
-            .unwrap();
+    let config = sandbox_config(
+        Path::new("/host/target/unset"),
+        &specification(source),
+        ColorMode::Never,
+        &[],
+    )
+    .unwrap();
 
     assert_eq!(config.environment, [("KEEP".to_owned(), "yes".to_owned())]);
     assert_eq!(config.unset_environment, ["REMOVE_ME"]);
@@ -400,6 +412,7 @@ fn uses_a_guest_wrapper_only_for_portable_environment_unsets() {
         Path::new("/host/target/unset"),
         &specification("//@ unset-exec-env: NOT PORTABLE\n"),
         ColorMode::Never,
+        &[],
     )
     .unwrap_err();
     assert_eq!(

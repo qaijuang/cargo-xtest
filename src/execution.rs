@@ -146,6 +146,7 @@ pub(crate) fn sandbox_config(
     executable: &Path,
     specification: &EffectiveSpecification,
     color: ColorMode,
+    test_arguments: &[String],
 ) -> Result<SandboxConfig> {
     let rootfs = match &specification.sandbox.rootfs {
         EffectiveRootfs::Image { source, pull_policy, root_disk_mib } => SandboxRootfs::Image {
@@ -186,6 +187,7 @@ pub(crate) fn sandbox_config(
         .iter()
         .flat_map(|flags| flags.value.iter().cloned())
         .collect();
+    arguments.extend_from_slice(test_arguments);
     let force_color = apply_test_color(&mut arguments, color);
     let stage_terminfo = force_color && !terminal_environment_is_explicit;
     if stage_terminfo {

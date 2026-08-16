@@ -6,21 +6,48 @@
 
 At a high level:
 
-- cargo-xtest discovers integration-test targets in Cargo's default workspace
-  members.
+- Cargo selects packages, features, profiles, and integration-test targets.
+- cargo-xtest asks Cargo to compile the selected test artifacts for the
+  Linux-musl guest target in one build.
 - It reads `//@` directives from each test file.
-- It compiles each file as one self-contained Linux-musl libtest binary.
 - It starts one ephemeral VM, copies the binary into it, and lets libtest run
   every `#[test]` function in that binary.
 - It stops the VM before moving to the next test file.
+
+See the [execution flow][execution-flow] for the full sequence.
 
 Multiple tests in one file share a binary and a VM. Tests in different files do
 not.
 
 > [!IMPORTANT]
-> cargo-xtest isolates the finished test binary, not compilation. Cargo, build
-> scripts, procedural macros, and the compiler run on your host. Run only source
-> code you trust.
+> cargo-xtest isolates guest execution, but compilation runs on your host. Read
+> the [trust boundary][trust-boundary] and run only source code you trust.
+
+## Contents
+
+- **Getting started**
+  - [Requirements](#requirements)
+  - [Install from source](#install-from-source)
+  - [Run your first test](#run-your-first-test)
+- **Running tests**
+  - [Select packages and tests](#select-packages-and-tests)
+  - [Check a test before you run it](#check-a-test-before-you-run-it)
+  - [Execution flow][execution-flow]
+  - [Interrupt a run](#interrupt-a-run)
+- **Configuring tests**
+  - [Write directives](#write-directives)
+  - [Select tests](#select-tests)
+  - [Declare required capabilities](#declare-required-capabilities)
+  - [Configure libtest and the environment](#configure-libtest-and-the-environment)
+  - [Root filesystem][root-filesystem]
+  - [Set VM resources](#set-vm-resources)
+  - [Configure the guest process](#configure-the-guest-process)
+  - [Configure the network](#configure-the-network)
+- **References**
+  - [Defaults][defaults]
+  - [Directive repitition][directive-repetition]
+  - [Read diagnostics and exit statuses](#read-diagnostics-and-exit-statuses)
+  - [Current limitations](#current-limitations)
 
 ## Requirements
 
@@ -90,6 +117,63 @@ cargo xtest
 libtest still controls test discovery, output capture, and the final test
 result inside each binary.
 
+If a test file has no directives, cargo-xtest compiles and runs it with the
+[safe defaults][defaults].
+
+## Select packages and tests
+
+Use the Cargo options you already use with `cargo test` to select packages,
+features, integration-test targets, build profiles, and build settings. For
+example:
+
+```sh
+cargo xtest --workspace --exclude slow-service
+cargo xtest --package api --features postgres --test database
+cargo xtest --release --jobs 4
+```
+
+cargo-xtest passes these options to the same Cargo executable that invoked it.
+Cargo checks their values and reports errors. Run `cargo xtest --help` for the
+complete supported set.
+
+By default, cargo-xtest asks Cargo to build test targets with `--tests`. Cargo
+may also produce unit-test executables for libraries or binaries during that
+build. cargo-xtest does not run those executables. It explains each omission:
+
+```text
+skipped src/lib.rs: cargo-xtest runs integration-test targets only
+```
+
+Target selectors outside the integration-test boundary, such as `--lib`,
+`--bin`, `--example`, `--bench`, `--all-targets`, and `--doc`, produce a policy
+error. cargo-xtest also reserves `--target`, `--message-format`, and
+`--unit-graph` because it must control the guest target and Cargo's artifact
+stream.
+
+Use `--no-run` to stop after Cargo compiles the selected artifacts.
+cargo-xtest does not read directives or start Microsandbox in this mode.
+
+### Pass arguments to libtest
+
+Put a test-name filter after cargo-xtest's options. Put other libtest arguments
+after `--`:
+
+```sh
+cargo xtest connection
+cargo xtest connection -- --exact --show-output
+```
+
+cargo-xtest appends these arguments to the `run-flags` from each selected test
+file. Each libtest binary checks the combined arguments.
+
+By default, cargo-xtest stops when a test binary fails. Use `--no-fail-fast` to
+run the remaining integration-test binaries and return a failing status after
+the last one. Directive, Cargo, Microsandbox, signal, and cleanup errors still
+stop the run immediately.
+
+Use `--quiet` to hide Cargo progress and cargo-xtest's `running` and `skipped`
+messages. Test output and errors remain visible.
+
 ## Check a test before you run it
 
 Use `explain` to see the effective settings for one test file:
@@ -105,21 +189,24 @@ it. It validates directives without compiling the test or starting a VM.
 
 For each `cargo xtest` invocation, cargo-xtest:
 
-1. Uses Cargo metadata to find integration-test targets in the default
-   workspace members.
-2. Sorts the targets by source path.
-3. Reads and validates the directives in the first target.
-4. Skips the target when an applicability rule excludes its Linux-musl guest.
-5. Uses the Cargo executable that started cargo-xtest to compile that target.
-6. Creates an ephemeral VM from the selected OCI image or snapshot.
-7. Copies the compiled test binary into the VM. When color is enabled, it also
+1. Passes the supported package, feature, profile, and build options to Cargo.
+2. Asks Cargo to compile the selected test artifacts for the Linux-musl guest
+   target without running them.
+3. Collects Cargo's integration-test executables and sorts all test artifacts
+   by source path.
+4. Reports test artifacts outside the integration-test boundary as skipped.
+5. Reads and validates the directives in the next integration-test file.
+6. Skips the file when an applicability rule excludes its Linux-musl guest.
+7. Creates an ephemeral VM from the selected OCI image or snapshot.
+8. Copies the compiled test binary into the VM. When color is enabled, it also
    writes a private terminal description into the VM's ephemeral filesystem.
-8. Runs the binary with the configured libtest arguments and environment. It
+9. Runs the binary with the configured libtest arguments and environment. It
    forwards Cargo diagnostics and guest output as they arrive.
-9. Stops the VM and continues to the next target.
+10. Stops the VM and continues to the next integration-test target.
 
-cargo-xtest stops at the first directive, compilation, execution, test, or
-cleanup failure. A skipped target does not stop the run.
+cargo-xtest normally stops at the first directive, compilation, execution,
+test, or cleanup failure. `--no-fail-fast` changes only test-binary failures. A
+skipped target does not stop the run.
 
 ### Know the trust boundary
 
@@ -201,6 +288,9 @@ directives.
 All `only-<predicate>` directives must match. Any matching
 `ignore-<predicate>` directive skips the file.
 
+See the [directive repetition rules][directive-repetition] for valid repeated
+predicates.
+
 The current profile recognizes these predicates:
 
 | Predicate                                                     | Match rule                     |
@@ -226,14 +316,15 @@ directives.
 | `needs-unwind`          | The profile treats unwinding as available.                            |
 | `needs-dynamic-linking` | The profile skips the file because the test binary is self-contained. |
 
-Declare each capability at most once.
+The [directive repetition rules][directive-repetition] apply to capability
+directives.
 
 ## Configure libtest and the environment
 
 ### `run-flags`
 
-Pass arguments to the libtest binary. You may repeat this directive. cargo-xtest
-appends arguments in source order.
+Pass arguments to the libtest binary. cargo-xtest appends arguments in source
+order. See the [directive repetition rules][directive-repetition].
 
 ```rust
 //@ run-flags: --nocapture
@@ -245,9 +336,10 @@ Double-quote and backslash escape rules are not supported.
 
 ### Color output
 
-cargo-xtest follows `CARGO_TERM_COLOR`. `always` enables color, `never`
-disables it, and `auto` uses color when cargo-xtest's host standard output is a
-terminal. A `--color` value in `run-flags` takes precedence.
+cargo-xtest follows `--color` when you provide it. Otherwise, it follows
+`CARGO_TERM_COLOR`. `always` enables color, `never` disables it, and `auto` uses
+color when cargo-xtest's host standard output is a terminal. A `--color` value
+in `run-flags` takes precedence for that test binary.
 
 When color is enabled, cargo-xtest writes its own small terminal description to
 the ephemeral VM and sets `TERM` and `TERMINFO` for libtest. This works with the
@@ -263,8 +355,8 @@ Set an environment variable inside the VM:
 //@ exec-env: RUST_BACKTRACE=1
 ```
 
-The value may contain additional `=` characters. Each environment key may
-appear only once.
+The value may contain additional `=` characters. See the
+[directive repetition rules][directive-repetition] for environment keys.
 
 ### `unset-exec-env`
 
@@ -275,7 +367,8 @@ Remove an environment variable before libtest starts:
 ```
 
 The key must start with an ASCII letter or `_`. Its remaining characters must
-be ASCII letters, digits, or `_`. Do not set and unset the same key.
+be ASCII letters, digits, or `_`. `exec-env` and `unset-exec-env` share the
+[environment-key rule][directive-repetition].
 
 ## Choose the root filesystem
 
@@ -297,7 +390,8 @@ Start the VM from an existing Microsandbox snapshot:
 //@ from-snapshot: prepared-database
 ```
 
-`image` and `from-snapshot` conflict. Declare only one root filesystem source.
+The [directive conflict rules][directive-repetition] cover image and snapshot
+combinations.
 
 ### `pull-policy`
 
@@ -308,7 +402,7 @@ Control when Microsandbox pulls an OCI image:
 ```
 
 Choose `if-missing`, `always`, or `never`. This directive applies only to image
-root filesystems and conflicts with `from-snapshot`.
+root filesystems. See the [directive conflict rules][directive-repetition].
 
 ### `root-disk`
 
@@ -319,7 +413,7 @@ Set the image root disk size in mebibytes:
 ```
 
 Use a positive base-10 integer. This directive applies only to image root
-filesystems and conflicts with `from-snapshot`.
+filesystems. See the [directive conflict rules][directive-repetition].
 
 ## Set VM resources
 
@@ -485,9 +579,10 @@ resolvers or timeout when needed:
 //@ dns-query-timeout: 2500
 ```
 
-`dns-server` accepts an IP address or host name with an optional port. Repeat
-it to set more than one resolver. Use this presence directive only when the
-test must accept private addresses returned by public DNS:
+`dns-server` accepts an IP address or host name with an optional port. See the
+[directive repetition rules][directive-repetition] for multiple resolvers. Use
+this presence directive only when the test must accept private addresses
+returned by public DNS:
 
 ```rust
 //@ no-dns-rebind-protection
@@ -504,8 +599,9 @@ Enable TLS interception explicitly:
 
 It intercepts TCP port 443, verifies upstream certificates, and blocks QUIC on
 intercepted ports by default. If you add any `tls-intercept-port` directive,
-the explicit port list replaces the default. Repeat the directive to intercept
-more than one port. These directives refine that behavior:
+the explicit port list replaces the default. See the
+[directive repetition rules][directive-repetition] for options that may appear
+more than once. These directives refine that behavior:
 
 | Directive                  | Value or effect                                    |
 | -------------------------- | -------------------------------------------------- |
@@ -585,7 +681,8 @@ These directives may repeat:
 
 - `run-flags`, which appends more libtest arguments.
 - `only-<predicate>` and `ignore-<predicate>`, when each predicate is unique.
-- `exec-env` and `unset-exec-env`, when each key is unique.
+- `exec-env` and `unset-exec-env`, when each key appears only once across both
+  directives.
 - `network-rule`, whose source order controls first-match evaluation.
 - `publish-port`, `dns-server`, `tls-intercept-port`, `tls-bypass`,
   `tls-verify-upstream-for`, `tls-upstream-ca-cert`, and
@@ -595,6 +692,9 @@ The root filesystem rules add two specific conflicts:
 
 - `image` conflicts with `from-snapshot`.
 - `pull-policy` and `root-disk` conflict with `from-snapshot`.
+
+See the [root filesystem directives][root-filesystem] for option behavior and
+examples.
 
 ## Read diagnostics and exit statuses
 
@@ -622,14 +722,14 @@ statuses:
 | 2      | The command line was invalid.                                                       |
 | 101    | A libtest binary failed. Cargo also commonly uses this status for its own failures. |
 
-Cargo metadata, compilation, and test-process failures preserve their nonzero
-status when it fits in an 8-bit exit status. cargo-xtest uses status 1 otherwise.
+Cargo compilation failures preserve Cargo's nonzero status when it fits in an
+8-bit exit status. Any nonzero guest test-process exit makes cargo-xtest return
+status 101.
 
 ## Current limitations
 
 - cargo-xtest runs Cargo integration-test targets only. It does not run unit
   tests, documentation tests, or benchmark targets.
-- It uses only the default workspace members and stops at the first failure.
 - Every guest is Linux-musl and matches the host architecture. macOS and Windows
   guest binaries are not supported.
 - Dynamic linking is unavailable in the self-contained profile.
@@ -638,3 +738,9 @@ status when it fits in an 8-bit exit status. cargo-xtest uses status 1 otherwise
   this project does not run real-VM tests on Windows.
 - cargo-xtest does not provide service-specific orchestration. Prepare the
   selected image or snapshot with the services that your test needs.
+
+[defaults]: #review-the-defaults
+[directive-repetition]: #avoid-duplicate-and-conflicting-directives
+[execution-flow]: #understand-the-execution-flow
+[root-filesystem]: #choose-the-root-filesystem
+[trust-boundary]: #know-the-trust-boundary

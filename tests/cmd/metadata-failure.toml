@@ -9,5 +9,4 @@ error: unclosed table, expected `]`
   |
 1 | [package
   |         ^
-error: Cargo metadata failed with status 101
 """

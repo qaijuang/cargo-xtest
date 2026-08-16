@@ -22,8 +22,12 @@ use anyhow::{Context, Result};
 pub use cli::run_cli;
 pub use diagnostic::Diagnostics;
 
-fn run_project(stdout: &mut dyn io::Write, stderr: &mut dyn io::Write) -> Result<u8> {
-    runner::run_current_project(stdout, stderr)
+fn run_project(
+    arguments: &cli::TestArguments,
+    stdout: &mut dyn io::Write,
+    stderr: &mut dyn io::Write,
+) -> Result<u8> {
+    runner::run_current_project(arguments, stdout, stderr)
 }
 
 /// Parse and explain Rust test source supplied by a buffered reader.

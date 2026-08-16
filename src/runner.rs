@@ -1,25 +1,24 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal};
-use std::ops::ControlFlow;
-use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 
-use anyhow::{Context, Error, Result};
-use cargo_metadata::MetadataCommand;
+use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, BufReader};
 use tokio::process::Command;
 
 use crate::cargo::{
-    ArtifactCollector, GuestTarget, TestTarget, cargo_test_command, discover_from_metadata,
+    ArtifactCollector, CompiledTest, GuestTarget, TestArtifact, cargo_test_command,
     guest_target_for_arch,
 };
+use crate::cli::TestArguments;
 use crate::execution::{ColorMode, Decision, ExecutionOutcome, decide, execute, sandbox_config};
 use crate::helpers::write_live;
 use crate::signal::{HostSignal, HostSignals};
 use crate::{Diagnostics, load_path};
 
 pub(crate) fn run_current_project(
+    arguments: &TestArguments,
     stdout: &mut dyn io::Write,
     stderr: &mut dyn io::Write,
 ) -> Result<u8> {
@@ -34,68 +33,102 @@ pub(crate) fn run_current_project(
         let cargo = env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
         let guest = guest_target_for_arch(env::consts::ARCH)?;
         let mut signals = HostSignals::new().context("could not listen for termination signals")?;
+        let cargo_term_color = env::var_os("CARGO_TERM_COLOR");
         let color = resolve_color_mode(
-            env::var_os("CARGO_TERM_COLOR").as_deref(),
+            arguments.color().or(cargo_term_color.as_deref()),
             io::stdout().is_terminal(),
         );
-        let mut metadata = MetadataCommand::new();
-        metadata.cargo_path(cargo.clone()).current_dir(&project_root).no_deps();
-        let mut metadata_command = Command::from(metadata.cargo_command());
-        let Some(metadata) =
-            run_process(&mut metadata_command, "Cargo metadata", None, stderr, &mut signals)
-                .await?
+        let guest_arguments = arguments.guest_arguments();
+        let cargo_specification = cargo_test_command(
+            cargo,
+            project_root.clone(),
+            guest,
+            color == ColorMode::Always,
+            &arguments.cargo_arguments(),
+            arguments.selects_tests(),
+        );
+        let mut cargo_command = Command::new(&cargo_specification.program);
+        cargo_command
+            .args(&cargo_specification.arguments)
+            .envs(cargo_specification.environment.iter().cloned())
+            .current_dir(&cargo_specification.current_dir);
+        let Some(build) =
+            run_process(&mut cargo_command, "Cargo test compilation", stderr, &mut signals).await?
         else {
             return Ok(1);
         };
-        let metadata = match metadata {
-            ProcessOutcome::Exited(metadata) => metadata,
+        let build = match build {
+            ProcessOutcome::Exited(build) => build,
             ProcessOutcome::Interrupted(signal) => return Ok(signal.exit_status()),
         };
-        let metadata_status = status_code(metadata.status);
-        if !metadata.status.success() {
-            writeln!(stderr, "error: Cargo metadata failed with status {metadata_status}")?;
-            return Ok(exit_status(metadata_status));
+        if !build.status.success() {
+            return Ok(exit_status(status_code(build.status)));
+        }
+        if arguments.compile_only() {
+            return Ok(0);
         }
 
-        let metadata = match str::from_utf8(&metadata.stdout) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                let error = Error::new(error).context("Cargo metadata was not UTF-8");
-                writeln!(stderr, "error: {error:#}")?;
-                return Ok(1);
-            }
+        let target_options = TargetOptions {
+            guest,
+            color,
+            test_arguments: &guest_arguments,
+            quiet: arguments.quiet(),
         };
-        let metadata = match MetadataCommand::parse(metadata) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                let error = Error::new(error).context("invalid Cargo metadata");
-                writeln!(stderr, "error: {error:#}")?;
-                return Ok(1);
-            }
-        };
-        let targets = discover_from_metadata(&metadata);
-
-        for target in &targets {
-            if let ControlFlow::Break(status) =
-                run_target(target, guest, color, &cargo, stdout, stderr, &mut signals).await?
-            {
-                return Ok(status);
+        let mut test_failed = false;
+        for artifact in build.artifacts {
+            match artifact {
+                TestArtifact::Skip(target) => {
+                    if !arguments.quiet() {
+                        let source_path = target
+                            .source_path
+                            .strip_prefix(&project_root)
+                            .unwrap_or(&target.source_path);
+                        writeln!(
+                            stdout,
+                            "skipped {}: cargo-xtest runs integration-test targets only",
+                            source_path.display()
+                        )?;
+                        stdout.flush()?;
+                    }
+                }
+                TestArtifact::Run(target) => {
+                    match run_target(&target, &target_options, stdout, stderr, &mut signals).await?
+                    {
+                        TargetOutcome::Passed => {}
+                        TargetOutcome::TestFailed if arguments.keep_going() => {
+                            test_failed = true;
+                        }
+                        TargetOutcome::TestFailed => return Ok(101),
+                        TargetOutcome::Stop(status) => return Ok(status),
+                    }
+                }
             }
         }
-        Ok(0)
+        Ok(if test_failed { 101 } else { 0 })
     })
+}
+
+enum TargetOutcome {
+    Passed,
+    TestFailed,
+    Stop(u8),
+}
+
+struct TargetOptions<'a> {
+    guest: GuestTarget,
+    color: ColorMode,
+    test_arguments: &'a [String],
+    quiet: bool,
 }
 
 #[allow(clippy::too_many_lines)]
 async fn run_target(
-    target: &TestTarget,
-    guest: GuestTarget,
-    color: ColorMode,
-    cargo: &OsString,
+    target: &CompiledTest,
+    options: &TargetOptions<'_>,
     stdout: &mut dyn io::Write,
     stderr: &mut dyn io::Write,
     signals: &mut HostSignals,
-) -> Result<ControlFlow<u8>> {
+) -> Result<TargetOutcome> {
     let specification = match load_path(&target.source_path) {
         Ok(specification) => specification,
         Err(error) => {
@@ -104,65 +137,36 @@ async fn run_target(
             } else {
                 writeln!(stderr, "error: {error:#}")?;
             }
-            return Ok(ControlFlow::Break(1));
+            return Ok(TargetOutcome::Stop(1));
         }
     };
-    match decide(&specification, guest_architecture(guest), guest.triple) {
+    match decide(&specification, guest_architecture(options.guest), options.guest.triple) {
         Decision::Run => {}
         Decision::Skip(reason) => {
-            writeln!(stdout, "skipped {}: {reason}", target.source_path.display())?;
-            stdout.flush()?;
-            return Ok(ControlFlow::Continue(()));
+            if !options.quiet {
+                writeln!(stdout, "skipped {}: {reason}", target.source_path.display())?;
+                stdout.flush()?;
+            }
+            return Ok(TargetOutcome::Passed);
         }
     }
 
-    let cargo_specification =
-        cargo_test_command(cargo.clone(), target, guest, color == ColorMode::Always);
-    let mut cargo_command = Command::new(&cargo_specification.program);
-    cargo_command
-        .args(&cargo_specification.arguments)
-        .envs(cargo_specification.environment.iter().cloned())
-        .current_dir(&cargo_specification.current_dir);
-    let Some(build) =
-        run_process(&mut cargo_command, "Cargo test compilation", Some(target), stderr, signals)
-            .await?
-    else {
-        return Ok(ControlFlow::Break(1));
-    };
-    let build = match build {
-        ProcessOutcome::Exited(build) => build,
-        ProcessOutcome::Interrupted(signal) => {
-            return Ok(ControlFlow::Break(signal.exit_status()));
-        }
-    };
-    let build_status = status_code(build.status);
-    if !build.status.success() {
-        writeln!(
-            stderr,
-            "error: Cargo failed to compile {} with status {build_status}",
-            target.source_path.display()
-        )?;
-        return Ok(ControlFlow::Break(exit_status(build_status)));
-    }
-
-    let Some(executable) = build.executable else {
-        writeln!(
-            stderr,
-            "error: Cargo did not report an executable for test target `{}`",
-            target.name
-        )?;
-        return Ok(ControlFlow::Break(1));
-    };
-
-    let config = match sandbox_config(&executable, &specification, color) {
+    let config = match sandbox_config(
+        &target.executable,
+        &specification,
+        options.color,
+        options.test_arguments,
+    ) {
         Ok(plan) => plan,
         Err(error) => {
             writeln!(stderr, "{}: error: {error:#}", target.source_path.display())?;
-            return Ok(ControlFlow::Break(1));
+            return Ok(TargetOutcome::Stop(1));
         }
     };
-    writeln!(stdout, "running {}", target.source_path.display())?;
-    stdout.flush()?;
+    if !options.quiet {
+        writeln!(stdout, "running {}", target.source_path.display())?;
+        stdout.flush()?;
+    }
     let execution = match execute(&config, stdout, stderr, signals)
         .await
         .context("could not run test in Microsandbox")
@@ -170,7 +174,7 @@ async fn run_target(
         Ok(execution) => execution,
         Err(error) => {
             writeln!(stderr, "error: {error:#}")?;
-            return Ok(ControlFlow::Break(1));
+            return Ok(TargetOutcome::Stop(1));
         }
     };
     let status = match execution.outcome {
@@ -179,37 +183,29 @@ async fn run_target(
             if let Some(error) = execution.cleanup_error {
                 writeln!(stderr, "error: {error}")?;
             }
-            return Ok(ControlFlow::Break(signal.exit_status()));
+            return Ok(TargetOutcome::Stop(signal.exit_status()));
         }
     };
     if status == 0 {
         if let Some(error) = execution.cleanup_error {
             writeln!(stderr, "error: {error}")?;
-            return Ok(ControlFlow::Break(1));
+            return Ok(TargetOutcome::Stop(1));
         }
-        return Ok(ControlFlow::Continue(()));
+        return Ok(TargetOutcome::Passed);
     }
 
-    if status == 101 {
-        writeln!(stderr, "test {} failed with status 101", target.source_path.display())?;
-    } else {
-        writeln!(
-            stderr,
-            "error: Microsandbox failed while running {} with status {status}",
-            target.source_path.display()
-        )?;
-    }
+    writeln!(stderr, "test {} failed with status {status}", target.source_path.display())?;
     if let Some(error) = execution.cleanup_error {
         writeln!(stderr, "error: {error}")?;
+        return Ok(TargetOutcome::Stop(1));
     }
-    Ok(ControlFlow::Break(exit_status(status)))
+    Ok(TargetOutcome::TestFailed)
 }
 
 #[derive(Debug)]
 struct ProcessOutput {
     status: ExitStatus,
-    stdout: Vec<u8>,
-    executable: Option<PathBuf>,
+    artifacts: Vec<TestArtifact>,
 }
 
 #[derive(Debug)]
@@ -221,7 +217,6 @@ enum ProcessOutcome {
 async fn run_process(
     command: &mut Command,
     operation: &str,
-    target: Option<&TestTarget>,
     stderr: &mut dyn io::Write,
     signals: &mut HostSignals,
 ) -> Result<Option<ProcessOutcome>> {
@@ -236,24 +231,20 @@ async fn run_process(
     let child_stdout = child.stdout.take().context("could not capture Cargo stdout")?;
     let mut child_stdout = BufReader::new(child_stdout);
     let mut child_stderr = child.stderr.take().context("could not capture Cargo stderr")?;
-    let mut stdout = Vec::new();
     let mut stdout_line = Vec::new();
     let mut stderr_buffer = [0; 8192];
     let mut stdout_open = true;
     let mut stderr_open = true;
     let mut status: Option<ExitStatus> = None;
-    let mut artifacts = target.map(ArtifactCollector::new);
+    let mut artifacts = ArtifactCollector::default();
 
     loop {
         if let Some(status) = status
             && !stdout_open
             && !stderr_open
         {
-            let executable = match artifacts {
-                Some(artifacts) if status.success() => Some(artifacts.finish()?),
-                _ => None,
-            };
-            return Ok(Some(ProcessOutcome::Exited(ProcessOutput { status, stdout, executable })));
+            let artifacts = if status.success() { artifacts.finish() } else { Vec::new() };
+            return Ok(Some(ProcessOutcome::Exited(ProcessOutput { status, artifacts })));
         }
 
         tokio::select! {
@@ -261,12 +252,8 @@ async fn run_process(
                 let read = read.context("could not read Cargo stdout")?;
                 if read == 0 {
                     stdout_open = false;
-                } else if let Some(artifacts) = &mut artifacts {
-                    if let Some(output) = artifacts.observe(&stdout_line)? {
-                        write_live(stderr, &output)?;
-                    }
-                } else {
-                    stdout.extend_from_slice(&stdout_line);
+                } else if let Some(output) = artifacts.observe(&stdout_line)? {
+                    write_live(stderr, &output)?;
                 }
                 stdout_line.clear();
             }
