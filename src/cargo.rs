@@ -123,11 +123,11 @@ pub(crate) fn cargo_test_command(
     program: OsString,
     current_dir: PathBuf,
     guest: GuestTarget,
-    color: bool,
+    color: OsString,
     user_arguments: &[OsString],
     selects_tests: bool,
 ) -> CargoCommand {
-    let message_format = if color {
+    let message_format = if color == "always" {
         "--message-format=json-diagnostic-rendered-ansi"
     } else {
         "--message-format=json"
@@ -137,6 +137,7 @@ pub(crate) fn cargo_test_command(
     if !selects_tests {
         arguments.push(OsString::from("--tests"));
     }
+    arguments.extend([OsString::from("--color"), color]);
     arguments.extend(
         ["--target", guest.triple, "--no-run", message_format].into_iter().map(OsString::from),
     );

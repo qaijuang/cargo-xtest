@@ -51,7 +51,7 @@ fn constructs_one_cargo_command_for_all_enabled_test_targets() {
         OsString::from("/opt/toolchains/cargo"),
         PathBuf::from("/workspace"),
         guest,
-        false,
+        OsString::from("never"),
         &[],
         false,
     );
@@ -63,6 +63,8 @@ fn constructs_one_cargo_command_for_all_enabled_test_targets() {
         [
             "test",
             "--tests",
+            "--color",
+            "never",
             "--target",
             "aarch64-unknown-linux-musl",
             "--no-run",
@@ -80,12 +82,12 @@ fn constructs_one_cargo_command_for_all_enabled_test_targets() {
 }
 
 #[test]
-fn requests_ansi_rendered_diagnostics_when_color_is_forced() {
+fn forces_cargo_and_rendered_diagnostics_to_use_color() {
     let command = cargo_test_command(
         OsString::from("cargo"),
         PathBuf::from("/workspace"),
         guest_target_for_arch("x86_64").unwrap(),
-        true,
+        OsString::from("always"),
         &[],
         false,
     );
@@ -96,6 +98,7 @@ fn requests_ansi_rendered_diagnostics_when_color_is_forced() {
             .iter()
             .any(|argument| argument == "--message-format=json-diagnostic-rendered-ansi")
     );
+    assert!(command.arguments.windows(2).any(|arguments| arguments == ["--color", "always"]));
 }
 
 #[test]

@@ -338,8 +338,9 @@ Double-quote and backslash escape rules are not supported.
 
 cargo-xtest follows `--color` when you provide it. Otherwise, it follows
 `CARGO_TERM_COLOR`. `always` enables color, `never` disables it, and `auto` uses
-color when cargo-xtest's host standard output is a terminal. A `--color` value
-in `run-flags` takes precedence for that test binary.
+color when the corresponding host stream is a terminal. Cargo build output uses
+standard error, and test output uses standard output. A `--color` value in
+`run-flags` takes precedence for that test binary.
 
 When color is enabled, cargo-xtest writes its own small terminal description to
 the ephemeral VM and sets `TERM` and `TERMINFO` for libtest. This works with the

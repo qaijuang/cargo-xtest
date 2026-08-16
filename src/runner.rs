@@ -34,16 +34,21 @@ pub(crate) fn run_current_project(
         let guest = guest_target_for_arch(env::consts::ARCH)?;
         let mut signals = HostSignals::new().context("could not listen for termination signals")?;
         let cargo_term_color = env::var_os("CARGO_TERM_COLOR");
-        let color = resolve_color_mode(
-            arguments.color().or(cargo_term_color.as_deref()),
-            io::stdout().is_terminal(),
-        );
+        let requested_color = arguments.color().or(cargo_term_color.as_deref());
+        let test_color = resolve_color_mode(requested_color, io::stdout().is_terminal());
+        let cargo_color = match requested_color {
+            Some(value) if value != "auto" => value.to_os_string(),
+            _ => match resolve_color_mode(requested_color, io::stderr().is_terminal()) {
+                ColorMode::Always => OsString::from("always"),
+                ColorMode::Never => OsString::from("never"),
+            },
+        };
         let guest_arguments = arguments.guest_arguments();
         let cargo_specification = cargo_test_command(
             cargo,
             project_root.clone(),
             guest,
-            color == ColorMode::Always,
+            cargo_color,
             &arguments.cargo_arguments(),
             arguments.selects_tests(),
         );
@@ -70,7 +75,7 @@ pub(crate) fn run_current_project(
 
         let target_options = TargetOptions {
             guest,
-            color,
+            color: test_color,
             test_arguments: &guest_arguments,
             quiet: arguments.quiet(),
         };
@@ -157,7 +162,7 @@ async fn run_target(
         options.color,
         options.test_arguments,
     ) {
-        Ok(plan) => plan,
+        Ok(config) => config,
         Err(error) => {
             writeln!(stderr, "{}: error: {error:#}", target.source_path.display())?;
             return Ok(TargetOutcome::Stop(1));

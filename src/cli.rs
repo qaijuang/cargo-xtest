@@ -174,7 +174,6 @@ impl TestArguments {
             arguments.push(OsString::from("--quiet"));
         }
         arguments.extend((0..self.verbose).map(|_| OsString::from("--verbose")));
-        push_option(&mut arguments, "--color", self.color.as_ref());
         push_flag(&mut arguments, "--future-incompat-report", self.future_incompat_report);
         push_values(&mut arguments, "--config", &self.config);
         push_values(&mut arguments, "-Z", &self.unstable);
