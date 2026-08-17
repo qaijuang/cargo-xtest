@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ffi::OsString;
 use std::io;
 use std::path::PathBuf;
@@ -12,6 +13,15 @@ use crate::{Diagnostics, explain_path, run_project};
 #[command(name = "cargo", bin_name = "cargo", disable_help_subcommand = true)]
 enum CargoCli {
     Xtest(Arguments),
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Show the effective test specification.
+    Explain {
+        /// Rust integration-test file to explain.
+        test_file: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -290,15 +300,6 @@ fn push_values(arguments: &mut Vec<OsString>, name: &'static str, values: &[OsSt
     }
 }
 
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Show the effective test specification.
-    Explain {
-        /// Rust integration-test file to explain.
-        test_file: PathBuf,
-    },
-}
-
 /// Execute command-line behavior and forward output as it becomes available.
 ///
 /// `arguments` includes the executable name and Cargo's leading `xtest`
@@ -317,24 +318,36 @@ pub fn run_cli(
         Err(error) => return claperr(&error, stdout, stderr),
     };
     if let Some(argument) = arguments.test.unsupported_argument() {
-        let message = match argument {
+        let message: Cow<'static, str> = match argument {
             "--target" => {
                 "`--target` is not supported: cargo-xtest selects the Linux-musl guest target"
-                    .to_owned()
+                    .into()
             }
             "--message-format" => {
                 "`--message-format` is not supported: cargo-xtest reserves Cargo's JSON output"
-                    .to_owned()
+                    .into()
             }
             "--unit-graph" => {
                 "`--unit-graph` is not supported: cargo-xtest requires compiled test artifacts"
-                    .to_owned()
+                    .into()
             }
             _ => format!(
                 "`{argument}` is not supported: cargo-xtest runs integration-test targets only"
-            ),
+            )
+            .into(),
         };
-        return claperr(&validation_error(message), stdout, stderr);
+
+        let error = {
+            let mut command = CargoCli::command();
+            command.find_subcommand_mut("xtest").map_or_else(
+                || clap::Error::raw(ErrorKind::InvalidValue, &message),
+                |command| {
+                    command.set_bin_name("cargo xtest");
+                    command.error(ErrorKind::InvalidValue, &message)
+                },
+            )
+        };
+        return claperr(&error, stdout, stderr);
     }
 
     let result = match arguments.command {
@@ -348,18 +361,6 @@ pub fn run_cli(
         Ok(status) => Ok(status),
         Err(error) => apperr(&error, stderr),
     }
-}
-
-fn validation_error(message: impl Into<String>) -> clap::Error {
-    let message = message.into();
-    let mut command = CargoCli::command();
-    command.find_subcommand_mut("xtest").map_or_else(
-        || clap::Error::raw(ErrorKind::InvalidValue, &message),
-        |command| {
-            command.set_bin_name("cargo xtest");
-            command.error(ErrorKind::InvalidValue, &message)
-        },
-    )
 }
 
 fn claperr(

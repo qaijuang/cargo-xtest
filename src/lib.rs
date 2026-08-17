@@ -30,26 +30,15 @@ fn run_project(
     runner::run_current_project(arguments, stdout, stderr)
 }
 
-/// Parse and explain Rust test source supplied by a buffered reader.
-///
-/// # Errors
-///
-/// Returns an error when the reader fails, the source is not UTF-8, or the
-/// source contains invalid directives. Directive diagnostics retain source
-/// spans -- reader errors retain their I/O source.
-pub fn explain_reader(path: &Path, reader: impl BufRead) -> Result<String> {
-    let specification = load_reader(path, reader)?;
+/// Parse and explain a Rust test source file.
+fn explain_path(path: &Path) -> Result<String> {
+    let specification = load_path(path)?;
     Ok(explain::render(&specification)?)
 }
 
-/// Parse and explain a Rust test source file.
-///
-/// # Errors
-///
-/// Returns diagnostics when the file cannot be opened or read, or when its
-/// directives are invalid.
-pub fn explain_path(path: &Path) -> Result<String> {
-    let specification = load_path(path)?;
+#[cfg(test)]
+fn explain_reader(path: &Path, reader: impl BufRead) -> Result<String> {
+    let specification = load_reader(path, reader)?;
     Ok(explain::render(&specification)?)
 }
 
@@ -66,4 +55,22 @@ fn load_reader(path: &Path, reader: impl BufRead) -> Result<model::EffectiveSpec
     let result = model::reduce(path, directives, &mut diagnostics);
     diagnostics.sort();
     if diagnostics.is_empty() { Ok(result) } else { Err(diagnostics.into()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn invalid_utf8_is_an_io_error_without_a_source_diagnostic() {
+        let bytes = Cursor::new(vec![b'/', b'/', b'@', b' ', 0xff, b'\n']);
+        let error = explain_reader(Path::new("tests/not-utf8.rs"), bytes).unwrap_err();
+
+        assert!(error.downcast_ref::<Diagnostics>().is_none());
+        assert_eq!(error.to_string(), "could not read test source `tests/not-utf8.rs`");
+        assert_eq!(error.chain().count(), 2);
+    }
 }

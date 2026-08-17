@@ -172,7 +172,12 @@ pub(crate) fn sandbox_config(
                 environment.push((key.clone(), value.clone()));
             }
             EnvironmentChange::Unset(key) => {
-                if !is_portable_shell_identifier(key) {
+                let is_portable_shell_identifier = {
+                    let mut bytes = key.bytes();
+                    bytes.next().is_some_and(|first| first == b'_' || first.is_ascii_alphabetic())
+                        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+                };
+                if !is_portable_shell_identifier {
                     bail!("`unset-exec-env` key `{key}` is not a portable shell identifier");
                 }
                 terminal_environment_is_explicit |= key == "TERM" || key == "TERMINFO";
@@ -188,7 +193,7 @@ pub(crate) fn sandbox_config(
         .flat_map(|flags| flags.value.iter().cloned())
         .collect();
     arguments.extend_from_slice(test_arguments);
-    let force_color = apply_test_color(&mut arguments, color);
+    let force_color = resolve_test_color(&mut arguments, color);
     let stage_terminfo = force_color && !terminal_environment_is_explicit;
     if stage_terminfo {
         environment.extend([
@@ -319,7 +324,7 @@ fn resolve_host_path(test_source: &Path, value: &str) -> PathBuf {
     base.join(suffix.strip_prefix('/').unwrap_or(suffix))
 }
 
-fn apply_test_color(arguments: &mut Vec<String>, color: ColorMode) -> bool {
+fn resolve_test_color(arguments: &mut Vec<String>, color: ColorMode) -> bool {
     let options_end =
         arguments.iter().position(|argument| argument == "--").unwrap_or(arguments.len());
     let explicit_force_color =
@@ -349,7 +354,11 @@ pub(crate) async fn execute(
     stderr: &mut dyn io::Write,
     signals: &mut HostSignals,
 ) -> Result<ExecutionOutput> {
-    let mut builder = Sandbox::builder(next_sandbox_name())
+    let sandbox_name = {
+        let id = NEXT_SANDBOX_ID.fetch_add(1, Ordering::Relaxed);
+        format!("cargo-xtest-{}-{id}", std::process::id())
+    };
+    let mut builder = Sandbox::builder(sandbox_name)
         .cpus(config.cpus)
         .memory(config.memory_mib)
         .max_duration(config.max_duration_secs)
@@ -525,15 +534,4 @@ fn append_cleanup_error(output: &mut ExecutionOutput, error: String) {
     } else {
         output.cleanup_error = Some(error);
     }
-}
-
-fn next_sandbox_name() -> String {
-    let id = NEXT_SANDBOX_ID.fetch_add(1, Ordering::Relaxed);
-    format!("cargo-xtest-{}-{id}", std::process::id())
-}
-
-fn is_portable_shell_identifier(key: &str) -> bool {
-    let mut bytes = key.bytes();
-    bytes.next().is_some_and(|first| first == b'_' || first.is_ascii_alphabetic())
-        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
 }

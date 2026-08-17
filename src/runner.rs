@@ -69,6 +69,8 @@ pub(crate) fn run_current_project(
         if !build.status.success() {
             return Ok(exit_status(status_code(build.status)));
         }
+
+        // --no-run ?
         if arguments.compile_only() {
             return Ok(0);
         }
@@ -145,7 +147,13 @@ async fn run_target(
             return Ok(TargetOutcome::Stop(1));
         }
     };
-    match decide(&specification, guest_architecture(options.guest), options.guest.triple) {
+
+    let guest_architecture = options
+        .guest
+        .triple
+        .split_once('-')
+        .map_or(options.guest.triple, |(architecture, _)| architecture);
+    match decide(&specification, guest_architecture, options.guest.triple) {
         Decision::Run => {}
         Decision::Skip(reason) => {
             if !options.quiet {
@@ -290,10 +298,6 @@ async fn run_process(
             }
         }
     }
-}
-
-fn guest_architecture(guest: GuestTarget) -> &'static str {
-    guest.triple.split_once('-').map_or(guest.triple, |(architecture, _)| architecture)
 }
 
 fn resolve_color_mode(value: Option<&OsStr>, is_terminal: bool) -> ColorMode {
