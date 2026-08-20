@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-default-case"
+edition = "2024"
+
+[[test]]
+name = "ignored"
+path = "tests/ignored.rs"

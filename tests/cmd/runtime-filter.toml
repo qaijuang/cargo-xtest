@@ -1,0 +1,24 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "selected_case", "--", "--exact", "--show-output"]
+env.add.CARGO_TERM_QUIET = "true"
+fs.sandbox = true
+status.code = 0
+stdout = """
+running [CWD]/tests/runtime_filter.rs
+
+running 1 test
+test selected_case ... ok
+
+successes:
+
+---- selected_case stdout ----
+selected test ran inside Microsandbox
+
+
+successes:
+    selected_case
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+"""
+stderr = ""

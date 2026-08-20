@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-non-utf8-case"
+edition = "2024"
+
+[[test]]
+name = "non_utf8"
+path = "tests/non_utf8.rs"

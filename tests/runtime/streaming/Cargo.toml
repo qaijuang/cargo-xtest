@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-streaming-case"
+edition = "2024"
+
+[[test]]
+name = "streaming"
+path = "tests/streaming.rs"

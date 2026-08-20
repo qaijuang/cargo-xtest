@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-compile-color-case"
+edition = "2024"
+
+[[test]]
+name = "compile_color"
+path = "tests/compile_color.rs"

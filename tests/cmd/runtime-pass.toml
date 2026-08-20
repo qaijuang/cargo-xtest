@@ -1,0 +1,34 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+env.add.CARGO_TERM_QUIET = "true"
+fs.sandbox = true
+status.code = 0
+stdout = """
+running [CWD]/tests/runtime.rs
+
+running 3 tests
+test environment_is_configured_inside_the_vm ... ok
+test multiple_tests_share_the_libtest_binary ... ok
+test network_is_disabled_without_a_directive ... ok
+
+successes:
+
+---- environment_is_configured_inside_the_vm stdout ----
+environment configured inside Microsandbox
+
+---- multiple_tests_share_the_libtest_binary stdout ----
+second test in the same libtest binary
+
+---- network_is_disabled_without_a_directive stdout ----
+network disabled inside Microsandbox
+
+
+successes:
+    environment_is_configured_inside_the_vm
+    multiple_tests_share_the_libtest_binary
+    network_is_disabled_without_a_directive
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+"""
+stderr = ""

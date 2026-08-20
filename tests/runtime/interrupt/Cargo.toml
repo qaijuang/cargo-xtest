@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-interrupt-case"
+edition = "2024"
+
+[[test]]
+name = "interrupt"
+path = "tests/interrupt.rs"

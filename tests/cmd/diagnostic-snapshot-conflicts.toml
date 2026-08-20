@@ -1,0 +1,21 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/snapshot-conflicts.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: `pull-policy` cannot be used with `from-snapshot`
+ --> tests/cmd/fixtures/snapshot-conflicts.rs:2:5
+  |
+2 | //@ pull-policy: never
+  |     ^^^^^^^^^^^ not valid for snapshot rootfs
+  |
+  = note: snapshot rootfs declared at tests/cmd/fixtures/snapshot-conflicts.rs:1:5
+
+error[XT005]: `root-disk` cannot be used with `from-snapshot`
+ --> tests/cmd/fixtures/snapshot-conflicts.rs:3:5
+  |
+3 | //@ root-disk: 2048
+  |     ^^^^^^^^^ not valid for snapshot rootfs
+  |
+  = note: snapshot rootfs declared at tests/cmd/fixtures/snapshot-conflicts.rs:1:5
+"""

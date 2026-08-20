@@ -1,0 +1,7 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "--quiet"]
+fs.base = "default.in"
+fs.sandbox = true
+status.code = 0
+stdout = ""
+stderr = ""

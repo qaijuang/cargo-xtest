@@ -1,0 +1,7 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "--version"]
+status.code = 0
+stdout = """
+cargo-xtest 0.0.0
+"""
+stderr = ""

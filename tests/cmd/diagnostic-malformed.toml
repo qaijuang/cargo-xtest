@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/malformed.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT002]: `memory` requires a colon and value
+ --> tests/cmd/fixtures/malformed.rs:1:5
+  |
+1 | //@ memory
+  |     ^^^^^^ directive declared here
+  |
+  = help: write `//@ memory: value`
+"""

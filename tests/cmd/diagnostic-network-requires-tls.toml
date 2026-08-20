@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/network-requires-tls.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: TLS settings require `tls-intercept`
+ --> tests/cmd/fixtures/network-requires-tls.rs:2:5
+  |
+2 | //@ tls-bypass: *.internal.example
+  |     ^^^^^^^^^^ TLS setting declared here
+  |
+  = help: add `//@ tls-intercept`
+"""

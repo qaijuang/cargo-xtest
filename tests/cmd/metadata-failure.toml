@@ -1,0 +1,12 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+fs.sandbox = true
+status.code = 101
+stdout = ""
+stderr = """
+error: unclosed table, expected `]`
+ --> Cargo.toml:1:9
+  |
+1 | [package
+  |         ^
+"""

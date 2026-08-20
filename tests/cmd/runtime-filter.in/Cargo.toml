@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-runtime-filter-case"
+edition = "2024"
+
+[[test]]
+name = "runtime_filter"
+path = "tests/runtime_filter.rs"

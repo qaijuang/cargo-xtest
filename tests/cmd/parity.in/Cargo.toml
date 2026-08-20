@@ -1,0 +1,4 @@
+[workspace]
+members = ["excluded", "selected"]
+resolver = "3"
+

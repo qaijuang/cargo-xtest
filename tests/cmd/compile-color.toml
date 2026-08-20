@@ -1,0 +1,16 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+env.add.CARGO_TERM_COLOR = "always"
+env.add.CARGO_TERM_QUIET = "true"
+fs.sandbox = true
+status.code = 101
+stdout = ""
+stderr = """
+\u001B[1m\u001B[91merror\u001B[0m\u001B[1m[..]: controlled colored compile failure\u001B[0m
+ \u001B[1m\u001B[[..]m--> \u001B[0mtests/compile_color.rs:1:1
+  \u001B[1m\u001B[[..]m|\u001B[0m
+\u001B[1m\u001B[[..]m1\u001B[0m \u001B[1m\u001B[[..]m|\u001B[0m compile_error!("controlled colored compile failure");
+  \u001B[1m\u001B[[..]m|\u001B[0m \u001B[1m\u001B[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\u001B[0m
+
+\u001B[1m\u001B[91merror\u001B[0m: could not compile `cargo-xtest-compile-color-case` (test "compile_color") due to 1 previous error
+"""

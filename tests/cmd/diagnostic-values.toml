@@ -1,0 +1,55 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/value-errors.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT003]: invalid `pull-policy` value
+ --> tests/cmd/fixtures/value-errors.rs:1:5
+  |
+1 | //@ pull-policy: sometimes
+  |     ^^^^^^^^^^^ directive declared here
+  |
+  = help: expected `if-missing`, `always`, or `never`
+
+error[XT003]: `memory` must be a positive base-10 integer
+ --> tests/cmd/fixtures/value-errors.rs:2:5
+  |
+2 | //@ memory: 512MiB
+  |     ^^^^^^ directive declared here
+
+error[XT003]: `max-duration` must be greater than zero
+ --> tests/cmd/fixtures/value-errors.rs:3:5
+  |
+3 | //@ max-duration: 0
+  |     ^^^^^^^^^^^^ directive declared here
+
+error[XT003]: `workdir` must be an absolute guest path
+ --> tests/cmd/fixtures/value-errors.rs:4:5
+  |
+4 | //@ workdir: workspace
+  |     ^^^^^^^ directive declared here
+
+error[XT003]: `shell` must be an absolute guest path
+ --> tests/cmd/fixtures/value-errors.rs:5:5
+  |
+5 | //@ shell: bin/sh
+  |     ^^^^^ directive declared here
+
+error[XT003]: `init` must be `auto` or an absolute guest path
+ --> tests/cmd/fixtures/value-errors.rs:6:5
+  |
+6 | //@ init: systemd
+  |     ^^^^ directive declared here
+
+error[XT003]: `exec-env` requires `KEY=VALUE`
+ --> tests/cmd/fixtures/value-errors.rs:7:5
+  |
+7 | //@ exec-env: EMPTY
+  |     ^^^^^^^^ directive declared here
+
+error[XT003]: `unset-exec-env` value must not be empty
+ --> tests/cmd/fixtures/value-errors.rs:8:5
+  |
+8 | //@ unset-exec-env:
+  |     ^^^^^^^^^^^^^^ directive declared here
+"""

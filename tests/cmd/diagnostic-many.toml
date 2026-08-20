@@ -1,0 +1,23 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/many-errors.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT003]: `memory` must be greater than zero
+ --> tests/cmd/fixtures/many-errors.rs:1:5
+  |
+1 | //@ memory: 0
+  |     ^^^^^^ directive declared here
+
+error[XT001]: unknown directive `needs-subproces`
+ --> tests/cmd/fixtures/many-errors.rs:2:5
+  |
+2 | //@ needs-subproces
+  |     ^^^^^^^^^^^^^^^ directive declared here
+
+error[XT003]: `cpus` value is outside the supported range
+ --> tests/cmd/fixtures/many-errors.rs:3:5
+  |
+3 | //@ cpus: 999
+  |     ^^^^ directive declared here
+"""

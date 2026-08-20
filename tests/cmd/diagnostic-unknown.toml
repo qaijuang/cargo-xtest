@@ -1,0 +1,11 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/unknown.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT001]: unknown directive `memry`
+ --> tests/cmd/fixtures/unknown.rs:1:5
+  |
+1 | //@ memry: 512
+  |     ^^^^^ directive declared here
+"""

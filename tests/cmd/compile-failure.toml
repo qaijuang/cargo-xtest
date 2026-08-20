@@ -1,0 +1,15 @@
+bin.name = "cargo-xtest"
+args = ["xtest"]
+fs.sandbox = true
+status.code = 101
+stdout = ""
+stderr = """
+   Compiling cargo-xtest-compile-failure-case v0.0.0 ([CWD])
+error: controlled integration-test compile failure
+ --> tests/compile_failure.rs:1:1
+  |
+1 | compile_error!("controlled integration-test compile failure");
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not compile `cargo-xtest-compile-failure-case` (test "compile_failure") due to 1 previous error
+"""

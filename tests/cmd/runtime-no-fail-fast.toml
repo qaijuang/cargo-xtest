@@ -1,0 +1,30 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "--no-fail-fast", "--", "--show-output"]
+env.add.CARGO_TERM_QUIET = "true"
+fs.sandbox = true
+status.code = 101
+stdout = """
+running [CWD]/tests/a_failure.rs
+
+running 1 test
+test controlled_exit_status ... first integration-test binary ran inside Microsandbox
+running [CWD]/tests/b_success.rs
+
+running 1 test
+test later_success ... ok
+
+successes:
+
+---- later_success stdout ----
+second integration-test binary ran inside Microsandbox
+
+
+successes:
+    later_success
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+"""
+stderr = """
+test [CWD]/tests/a_failure.rs failed with status 42
+"""

@@ -1,0 +1,7 @@
+[package]
+name = "cargo-xtest-compile-failure-case"
+edition = "2024"
+
+[[test]]
+name = "compile_failure"
+path = "tests/compile_failure.rs"

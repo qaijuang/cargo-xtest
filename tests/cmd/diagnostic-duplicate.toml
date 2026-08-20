@@ -1,0 +1,14 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/duplicate.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT004]: duplicate `memory` directive
+ --> tests/cmd/fixtures/duplicate.rs:2:5
+  |
+2 | //@ memory: 1024
+  |     ^^^^^^ duplicate declaration
+  |
+  = note: first declared at tests/cmd/fixtures/duplicate.rs:1:5
+  = help: keep one `memory` directive
+"""

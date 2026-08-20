@@ -1,0 +1,13 @@
+bin.name = "cargo-xtest"
+args = ["xtest", "explain", "tests/cmd/fixtures/conflict.rs"]
+status.code = 1
+stdout = ""
+stderr = """
+error[XT005]: `from-snapshot` conflicts with the earlier `image` directive
+ --> tests/cmd/fixtures/conflict.rs:2:5
+  |
+2 | //@ from-snapshot: prepared-db
+  |     ^^^^^^^^^^^^^ conflicting rootfs source
+  |
+  = note: first rootfs source declared at tests/cmd/fixtures/conflict.rs:1:5
+"""

@@ -1,0 +1,15 @@
+bin.name = "cargo-xtest"
+args = [
+  "xtest",
+  "--workspace",
+  "--exclude", "excluded",
+  "--features", "selected/enabled",
+  "--test", "selected",
+  "--no-run",
+  "--quiet",
+]
+fs.base = "parity.in"
+fs.sandbox = true
+status.code = 0
+stdout = ""
+stderr = ""
